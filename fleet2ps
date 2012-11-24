@@ -8,8 +8,12 @@ use Tk::FileSelect;
 use Tk::NumEntry;
 
 my $shiplib=&shiplib;
+# my @nominal=(0,590,0,792);
+# my @printer=(12,582,13,829);
+
+# bounding box from latex output
 my @nominal=(0,590,0,792);
-my @printer=(12,582,13,829);
+my @printer=(12,582,0,800);
 
 if (@ARGV) {
   &do_fleetprint($ARGV[0],'-');
@@ -112,7 +116,8 @@ EOF
   }
   close FLEET;
   my ($basex,$basey)=(99,750);
-  my ($sizex,$sizey)=(198,-385.5);
+#  my ($sizex,$sizey)=(198,-385.5);
+  my ($sizex,$sizey)=(198,-350);
   my $ssx=160;
   my ($limx,$limy)=(2,1);
   my ($xc,$yc)=(0,0);
@@ -189,7 +194,8 @@ EOF
     $body .= <<EOF;
 gsave
 $vx $vy translate
-0 setlinewidth
+% default line width
+% 0 setlinewidth
 $sd
 grestore
 EOF
@@ -199,7 +205,8 @@ EOF
       $body .= <<EOF;
 gsave
 $vx $vy translate
-0 setlinewidth
+% default line width
+% 0 setlinewidth
 $fighters
 grestore
 EOF
@@ -208,6 +215,7 @@ EOF
   $body .= "showpage\n";
   $body =~ s/TOTALPAGES/$page/g;
   open PSFILE,">$psfile";
+  print PSFILE "%!PS\n\n";
   foreach my $k (keys %{$shiplib}) {
     if (exists($::shipused{$k})) {
       print PSFILE "$shiplib->{$k}\n";
@@ -223,6 +231,7 @@ sub ship2ps {
   my $sn=lc($class);
   $sn=~s/\W//g;
   $sn.='.ship';
+  $sn = './ships/' . $sn;
   my %vl=%{$m};
   my %header=%{{ map{$_=>1} qw(Class Classification Race Navy Mass Cost Thrust Armour Hull Hullrows Power Designer Crew) }};
   my %shipdata;
@@ -379,16 +388,18 @@ sub ship2ps {
     } elsif ($systype =~ /^SMR$/) { # missile racks
       my $s=(split ' ',lc($systype))[0];
       foreach my $arcset(@{$shipdata{Systems}->{$systype}}) {
-        my $fill='S';
         my %arcs=map{$_ => 1} split ' ',$arcset;
         my @arclist;
         foreach my $arc (qw(FS F FP AP A AS)) {
           push @arclist,(exists($arcs{$arc}))?1:0;
         }
-        my ($magid)=grep /^[a-z]\d+$/,keys %arcs;
-        if (exists($vl{$magid})) {
-          $fill=$vl{$magid};
+
+        my $fill='S';
+        if(exists($arcs{"E"}))
+        {
+            $fill = "E";
         }
+
         push @{$printdata{"$systype.$n"}},[join(' ',@arclist,"($fill)"), $s];
         $m++;
         if ($m==$limit) {
@@ -603,7 +614,7 @@ sub ship2ps {
   }
 
   my @tt;
-  my $y=25;
+  my $y=15;
   my $last=-1;
   my $o=0;
   my %magline;
@@ -722,7 +733,8 @@ EOF
   }
   $y -= 10*(1+$o+$shipdata{Hullrows});
   if ($shipdata{Race} =~ /Human|Kra'Vak|Phalon|Mixed/) {
-    push @tt,"35 $y coresystems";
+    # push @tt,"35 $y coresystems";
+    push @tt,"40 $y coresystems";
   }
   if ($shipdata{Race} eq "Sa'Vasku") { # the manoeuvre table
     my $maxthrust=int(($shipdata{Power}+.5)/$shipdata{Mass}/0.02+.99);
@@ -869,15 +881,15 @@ sub shiplib {
   gsave translate
   60 120 300 {
     dup 60 add exch
-    newpath        
+    newpath
     0 0 moveto
     dup cos 10 mul exch sin 10 mul lineto
     dup cos 10 mul exch sin 10 mul lineto
-    closepath fill                       
+    closepath fill
   } for
   0 120 240 {
     dup 60 add exch
-    newpath        
+    newpath
     dup cos 10 mul exch sin 10 mul moveto
     dup cos 10 mul exch sin 10 mul lineto
     stroke
@@ -1116,7 +1128,7 @@ sub shiplib {
 /thrusttable {
   gsave translate
   /Helvetica findfont
-  6 scalefont  
+  6 scalefont
   setfont
   (P) (T)
   /Y 0 def
@@ -1152,7 +1164,7 @@ sub shiplib {
 /kgun {
   gsave translate
   /Helvetica findfont
-  8 scalefont  
+  8 scalefont
   setfont
   dup stringwidth pop 2 div neg
   3 neg moveto
@@ -1161,16 +1173,16 @@ sub shiplib {
     newpath
     60 mul dup
     60 add /END exch def
-    /START exch def     
+    /START exch def
     START cos 6 mul START sin 6 mul moveto
     START cos 10 mul START sin 10 mul lineto
-    END cos 10 mul END sin 10 mul lineto    
+    END cos 10 mul END sin 10 mul lineto
     END cos 6 mul END sin 6 mul lineto
     closepath
     1 eq {stroke} {fill} ifelse
   } def
   5 showarc
-  4 showarc   
+  4 showarc
   3 showarc
   2 showarc
   1 showarc
@@ -1181,7 +1193,7 @@ sub shiplib {
 /pulser {
   gsave translate
   /Helvetica findfont
-  8 scalefont  
+  8 scalefont
   setfont
   dup stringwidth pop 2 div neg
   3 neg moveto
@@ -1190,7 +1202,7 @@ sub shiplib {
     newpath
     60 mul dup
     60 add /END exch def
-    /START exch def     
+    /START exch def
     /POINT START END add 2 div def
     START cos 6 mul START sin 6 mul moveto
     POINT cos 10.392 mul POINT sin 10.392 mul lineto
@@ -1199,7 +1211,7 @@ sub shiplib {
     1 eq {stroke} {fill} ifelse
   } def
   5 showarc
-  4 showarc   
+  4 showarc
   3 showarc
   2 showarc
   1 showarc
@@ -1262,6 +1274,7 @@ sub shiplib {
 
 /smr {
   gsave translate
+  0.3 setlinewidth
   newpath
   0 5 moveto
   -2 -4 lineto
@@ -1270,39 +1283,14 @@ sub shiplib {
   closepath
   /DONE 0 def
   /TYPE exch def
-  TYPE (L) eq {
-    fill
-    /DONE 1 def
-  } if
   TYPE (E) eq {
-    stroke
-    gsave
-    0 3 translate
-    1 1.5 scale
-    0 22.5 180 {
-      dup cos /COS exch def
-      sin /SIN exch def
-      newpath
-      2 COS mul 2 SIN mul moveto
-      3 COS mul 3 SIN mul lineto
-      stroke
-    } for
-    grestore
-    /DONE 1 def
-  } if
-% 
-  TYPE (M) eq {
-    stroke
-    newpath
-    -1 0.5 moveto
-    0 -1 lineto
-    1 0.5 lineto
-    stroke
+    fill
     /DONE 1 def
   } if
   DONE 0 eq {
     stroke
   } if
+  1 setlinewidth
  newpath 0 0 6 0 360 arc stroke
   /showarc {
     newpath
@@ -1339,43 +1327,24 @@ sub shiplib {
   SIZE 1 sub 6 mul 2 div neg 0 moveto
   /X SIZE 1 sub 6 mul 2 div neg def
   LOADOUT {
+    /TYPE exch def
+    0.3 setlinewidth
     newpath
-    X 5 moveto
-    -2 -9 rlineto
-    2 3 rlineto
-    2 -3 rlineto
+    TYPE (E) eq {
+       X 5.4 moveto
+      -2 -10 rlineto
+       2 3 rlineto
+       2 -3 rlineto
+    } {
+       X 5 moveto
+      -2 -9 rlineto
+       2 3 rlineto
+       2 -3 rlineto
+    } ifelse
     closepath
     /DONE 0 def
-    /TYPE exch def
-    TYPE (L) eq {
-      fill
-      /DONE 1 def
-    } if
     TYPE (E) eq {
-      stroke
-      gsave
-      X 3 translate
-      1 1.5 scale
-      0 22.5 180 {
-        dup cos /COS exch def
-        sin /SIN exch def
-        newpath
-        2 COS mul 2 SIN mul moveto
-        3 COS mul 3 SIN mul lineto
-        stroke
-      } for
-      grestore
-      /DONE 1 def
-    } if
-% 
-    TYPE (M) eq {
-      stroke
-      newpath
-      X 5 moveto
-      -1 -3 rmoveto
-      1 -3 rlineto
-      1 3 rlineto
-      stroke
+      fill
       /DONE 1 def
     } if
     DONE 0 eq {
@@ -1452,7 +1421,7 @@ sub shiplib {
   STARBURST
   stroke
   /Helvetica findfont
-  8 scalefont  
+  8 scalefont
   setfont
   CLASS
   dup stringwidth pop 2 div neg
@@ -1494,10 +1463,10 @@ sub shiplib {
   60 60 360 {
     dup 60 add exch
     dup cos 13 mul exch sin 13 mul lineto
-  } for 
+  } for
   stroke
   newpath
-  0 0 6 0 360 arc  
+  0 0 6 0 360 arc
   fill
   grestore
 } def
@@ -1536,13 +1505,13 @@ sub shiplib {
     pop
     newpath
     6 0 moveto
-    1 1 8 {   
-      dup 0.5 sub 45 mul /MID exch def   
+    1 1 8 {
+      dup 0.5 sub 45 mul /MID exch def
       MID cos 3 mul MID sin 3 mul lineto
-      45 mul /END exch def               
+      45 mul /END exch def
       END cos 6 mul END sin 6 mul lineto
     } for
-    closepath fill 
+    closepath fill
   } {
     /Helvetica-Bold findfont
     14 scalefont
@@ -1624,9 +1593,10 @@ sub shiplib {
   } for
   DC 1 eq {
     TDCP 0 gt {
-      CTR 1 sub TDCP le {
-        /TDCP TDCP 1 add def
-      } if
+% This adds extra DC parties which shouldn't be there
+%      CTR 1 sub TDCP le {
+%        /TDCP TDCP 1 add def
+%      } if
       1 1 TDCP {
         1 sub neg /OF exch def
         BIR 0 eq {0} {BIR 1 sub} ifelse OF add 10 mul LASTOFFSET blob
@@ -1751,8 +1721,8 @@ sub shiplib {
   6 0 moveto
   60 60 300 {
     dup cos 6 mul exch
-    sin 6 mul         
-    lineto   
+    sin 6 mul
+    lineto
   } for
   closepath stroke
   newpath
@@ -1762,16 +1732,16 @@ sub shiplib {
   closepath fill
   grestore
   /showarc {
-    newpath 
+    newpath
     60 mul dup
     60 add /END exch def
-    /START exch def     
+    /START exch def
     START cos 6 mul START sin 6 mul moveto
     START cos 10 mul START sin 10 mul lineto
-    0 0 10 START END arc                    
+    0 0 10 START END arc
     END cos 6 mul END sin 6 mul lineto
-    0 0 6 END START arcn              
-    1 eq {stroke} if    
+    0 0 6 END START arcn
+    1 eq {stroke} if
   } def
   5 showarc
   4 showarc
@@ -1933,12 +1903,12 @@ sub shiplib {
   {
     dup (@) eq {
       pop
-      exit 
+      exit
     } {
       /NUM NUM 1 add def
       /YOFF YOFF 1 add def
-      /Y YOFF -20 mul 1 sub def
-      0 Y 9 add 120 -19 rectstroke
+      /Y YOFF -28 mul 1 sub def
+      0 Y 11 add 122 -24 rectstroke
       2 Y 1 add moveto
       NUM (123) cvs show
       2 Y 9 sub moveto
@@ -1950,14 +1920,14 @@ sub shiplib {
       } ifelse def
       show
       12 Y 1 add moveto (Dmg) show
-      12 Y 9 sub moveto (CEF) show
+      12 Y 10 sub moveto (CEF) show
       0 1 1 {
         /YY exch def
         /RL 6 def
         YY 1 eq {
          /RL CEF def
         } if
-        /YY Y YY 9 mul sub def
+        /YY Y YY 10 mul sub def
         1 1 RL {
           /XX exch 2 add 10 mul def
           XX YY 8 8 rectstroke
@@ -2019,7 +1989,7 @@ sub shiplib {
    9 -3 lineto
   -9  3 moveto
    9  3 lineto
-  stroke 
+  stroke
   grestore
 } def
 
@@ -2040,15 +2010,16 @@ sub shiplib {
   -4.5 -7   lineto
   -1.5 -4   lineto
   -1.5 5.5  lineto
-  closepath 
+  closepath
   /DONE 0 def
   /ENDURANCE 3 def
   TYPE (E) eq {
     stroke
     gsave
+    0.5 setlinewidth
     0 8 translate
     1 1.5 scale
-    0 22.5 180 {
+    0 30 180 {
       dup cos /COS exch def
       sin /SIN exch def
       newpath
@@ -2057,30 +2028,7 @@ sub shiplib {
       stroke
     } for
     grestore
-    /DONE 1 def
-    /ENDURANCE 1 def
   } if
-  TYPE (M) eq {
-    stroke
-    newpath
-    -1.5 5.5  moveto
-    0    0.5  lineto
-    1.5  5.5  lineto
-    stroke
-    /DONE 1 def
-    /ENDURANCE 1 def
-  } if
-  TYPE (L) eq {
-    stroke
-    newpath
-    -1.5 -4   moveto
-    0    1    lineto
-    1.5  -4   lineto
-    stroke
-    /DONE 1 def
-    /ENDURANCE 5 def
-  } if
-% 
   TYPE (N) eq {
     fill
     newpath
@@ -2089,22 +2037,12 @@ sub shiplib {
     stroke
     /DONE 1 def
   } if
-  TYPE (V) eq {
-    stroke
-    newpath
-    0    10.5 moveto
-    1.5  5.5  lineto
-    1.5  1    lineto
-    -1.5 1    lineto
-    -1.5 5.5  lineto
-    closepath fill
-  } if
   DONE 0 eq {
     stroke
   } if
   1 1 ENDURANCE {
     /E exch def
-    6 E 5 mul 15 sub 4 4 rectstroke
+    7 E 6 mul 15 sub 4 4 rectstroke
   } for
   grestore
 } def
@@ -2162,7 +2100,7 @@ sub shiplib {
   grestore
 } def
 
-% 
+%
 
 EODATA
   foreach (split /\n/,$DATA) {

@@ -5,7 +5,8 @@
 
 use strict;
 use Tk;
-use Tk::NewOptionmenu;
+# use Tk::NewOptionmenu;
+use NewOptionmenu;
 use Tk::Pane; # Tk-GBARR
 use Tk::NumEntry; # Tk-GBARR
 use Tk::FileSelect;
@@ -439,8 +440,8 @@ $wd{automass}->configure(-command => sub {
                                    $pcused+=10;
                                  } else {
                                    $pcused+=$shipdata{Thrust}*5;
-                                 }   
-                               }                            
+                                 }
+                               }
                                foreach my $n (0..$#syslist) {
                                  if ($syslist[$n]->{name} =~ /^Screen /) {
                                    $pcused+=5;
@@ -518,7 +519,7 @@ $wd{autoclassif}->configure(-command => sub {
                               } else {
                                 if ($m<=10) {
                                   push @c,'Scoutship';
-                                } 
+                                }
                                 if ($m>=8 && $m<=16) {
                                   push @c,'Corvette';
                                 }
@@ -1338,7 +1339,7 @@ sub save {
   my $fn=lc($shipdata{Class});
   $fn =~ s!\W!!g;
   $fn.='.ship';
-  open FILE,">$fn";
+  open FILE,">./ships/$fn";
   my %tag=(p => 1,
            f => 1,
            h => 1,

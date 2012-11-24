@@ -8,7 +8,8 @@
 
 use strict;
 use Tk;
-use Tk::NewOptionmenu;
+# use Tk::NewOptionmenu;
+use NewOptionmenu;
 use Tk::Pane; # Tk-GBARR
 use Tk::FileSelect;
 use Data::Dumper;
@@ -20,10 +21,10 @@ my %races;
 my %armaments=('Fighter Bay' =>
                 [qw(Standard Fast Heavy Interceptor Attack Long-Range Torpedo)],
                'Pulser' => [qw(Close Medium Long)],
-               'SMM' => [('Standard','Misericorde','EMP','Long Lance','Antimatter')],
-               'Missile' => [('Standard','Misericorde','EMP','Long Lance','Antimatter')],
-               'SMR' => [('Standard','Misericorde','EMP')],
-               'SMR-ER' => [('Standard','Misericorde','EMP','Long Lance','Antimatter')]);
+               'SMM' => [('Standard','Extended')],
+               'Missile' => [('Standard','EMP','Needle')],
+               'SMR' => [('Standard')],
+               'SMR-ER' => [('Standard')]);
 my %armcost=(
 fStandard => 18,
 fFast => 24,
@@ -35,10 +36,7 @@ fTorpedo => 36
 );
 my %armmass=(
 sStandard => 2,
-sMisericorde => 2,
-sEMP => 2,
-'sLong Lance' => 3,
-sAntimatter => 3
+sExtended => 3
 );
 my %racefighter=('Human' => 'SFHIALT',
                  "Kra'Vak" => 'SH',
@@ -48,20 +46,22 @@ my %racefighter=('Human' => 'SFHIALT',
 my %shipheader=%{{ map{$_=>1} qw(Class Classification Race Navy Mass Cost Thrust Armour Hull Hullrows Crew Streamlining Power Designer) }};
 
 my %fleethead=%{{ map{$_=>1} qw(Fleet Admiral) }};
-opendir DIR,".";
+my $shipdir = "./ships";
+opendir DIR,$shipdir;
 my @ships=grep /\.ship$/,readdir DIR;
 closedir DIR;
 my @width=(0,0,0,0);
 foreach my $s (@ships) {
   my %d;
-  open SHIP,"<$s";
+  $s = $shipdir . "/" . $s;
+  open(SHIP,"<$s") || die "Unable to open $s $!";
   while (<SHIP>) {
     chomp;
     s/[\x00-\x1f]//g;
     my ($type,$value)=($_,'');
-    if (/^(.*?):\s*(.*)/) {   
+    if (/^(.*?):\s*(.*)/) {
       ($type,$value)=($1,$2);
-    }                        
+    }
     $d{$type}=$value;
   }
   close SHIP;
@@ -191,7 +191,7 @@ my $shipdef=$fleetshipdef->Text(-height => 15,
 
 my $shipselect=$top->Frame->pack(-anchor => 'w');
 my $b1=$shipselect->Listbox(-relief => 'sunken',
-                            -width => $width[0],
+                            -width => $width[0]+2,
                             -height => 10,
                             -setgrid => 1,
                             -selectmode => 'extended')
@@ -207,7 +207,7 @@ $b1->selectionClear(0,'end');
 $b1->selectionSet(0,0);
 $b1->bind('<ButtonRelease-1>',\&update_race);
 my $b2=$shipselect->Listbox(-relief => 'sunken',
-                            -width => $width[1],
+                            -width => $width[1]+2,
                             -height => 10,
                             -setgrid => 1,
                             -selectmode => 'extended')
@@ -356,6 +356,7 @@ sub update_classif {
   @classlist=sort {$ships->{$::b}->{cost}
                     <=> $ships->{$::a}->{cost}
                   } keys %l;
+
   if (defined($b4)) {
     $b4->delete(0,'end');
     $b4->insert('end',@classlist);
