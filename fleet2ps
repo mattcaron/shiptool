@@ -1,0 +1,2186 @@
+#! /usr/bin/perl -w
+
+# TODO
+
+use strict;
+use Tk;
+use Tk::FileSelect;
+use Tk::NumEntry;
+
+my $shiplib=&shiplib;
+my @nominal=(0,590,0,792);
+my @printer=(12,582,13,829);
+
+if (@ARGV) {
+  &do_fleetprint($ARGV[0],'-');
+} else {
+  my $top=new MainWindow;
+  my $infile='';
+  my $outfile='-';
+  my $fr1=$top->Frame->pack;
+  my $row=0;
+  $fr1->Label(-text => 'Fleet file')
+      ->grid(-column => 0,
+             -row => $row);
+  my $in=$fr1->Button(-text => 'Select fleet file')
+             ->grid(-column => 1,
+                    -row => $row);
+  $in->configure(-command => sub {
+            $infile=$fr1->FileSelect(-directory => '.',
+                                     -filter => '*.fleet')->Show;
+            $in->configure(-text => $infile);
+                                 });
+  $row++;
+  $fr1->Label(-text => 'Output file')
+      ->grid(-column => 0,
+             -row => $row);
+  my $out=$fr1->Button(-text => 'Standard output')
+             ->grid(-column => 1,
+                    -row => $row);
+  $out->configure(-command => sub {
+            $outfile=$fr1->FileSelect(-directory => '.',
+                                     -filter => '*.ps')->Show;
+            $out->configure(-text => $outfile);
+                                 });
+  my $fr2=$top->Frame->pack;
+  my $n=0;
+  foreach my $s qw(Left Right Bottom Top) {
+    $row++;
+    $fr2->Label(-text => $s)
+        ->grid(-column => $n,
+               -row => 0);
+    $fr2->NumEntry(-textvariable => \$printer[$n],
+                   -width => 4)
+        ->grid(-column => $n,
+               -row => 1);
+    $n++;
+  }
+  my $fr3=$top->Frame->pack;
+  $fr3->Button(-text => 'Print',
+               -command => sub{&do_fleetprint($infile,$outfile)})
+      ->grid(-column => 0,
+             -row => 0);
+  $fr3->Button(-text => 'Quit',
+               -command => [$top => 'destroy'])
+      ->grid(-column => 1,
+             -row => 0);
+  MainLoop;
+}
+
+sub do_fleetprint {
+  my ($fleetfile,$psfile)=@_;
+  my $pagehead='';
+  {
+    my @l=($printer[0]-$nominal[0],$printer[2]-$nominal[2]);
+    my @s=(($printer[1]-$printer[0])/($nominal[1]-$nominal[0]),
+           ($printer[3]-$printer[2])/($nominal[3]-$nominal[2]));
+    if ($s[0]>$s[1]) {
+      $s[0]=$s[1];
+    } else {
+      $s[1]=$s[0];
+    }
+    $pagehead="$l[0] $l[1] translate\n$s[0] $s[1] scale";
+  }
+  %::shipused=();
+  my $body= <<EOF;
+$pagehead
+/NUM 0 def
+EOF
+  open FLEET,"<$fleetfile";
+  my %fleethead=%{{ map{$_=>1} qw(Fleet Admiral) }};
+  my %fleetdata;
+  my @ships;
+  while (<FLEET>) {
+    chomp;
+    s/[\x00-\x1f]//g;
+    my ($type,$value)=($_,'');
+    if (/^(.*?):\s*(.*)/) {
+      ($type,$value)=($1,$2);
+    }
+    my %vl;
+    foreach my $k ($value =~ /<(.*?)>/g) {
+      my ($kk,$kv)=split ' ',$k,2;
+      $vl{$kk}=$kv;
+    }
+    $value =~ s/<.*?>//g;
+    $value =~ s/\s+/ /g;
+    if (exists($fleethead{$type})) {
+      $fleetdata{$type}=$value;
+    } else {
+      push @ships,[$type,$value,\%vl];
+    }
+  }
+  close FLEET;
+  my ($basex,$basey)=(99,750);
+  my ($sizex,$sizey)=(198,-385.5);
+  my $ssx=160;
+  my ($limx,$limy)=(2,1);
+  my ($xc,$yc)=(0,0);
+  my $np=1;
+  my $op=0;
+  my $sop=0;
+  my $page=0;
+  foreach my $ship (@ships) {
+    $sop++;
+    my ($class,$info,$m)=@{$ship};
+    my ($name,$marker)=('','');
+    if ($info =~ /(.*)\s*\((.*)\)/) {
+      ($name,$marker)=($1,$2);
+    } else {
+      $name=$info;
+    }
+    my ($shiparr,$x,$y,$fighters)=&ship2ps($class,$name,$marker,$m);
+    foreach my $item (@{$shiparr}) {
+      map {$::shipused{$_}=1} split ' ',$item;
+    }
+    my $sd=join("\n",@{$shiparr});
+    my $slots=int($x/$ssx)+1;
+    my $fw=0;
+    if ($fighters) {
+      $fw=1;
+    }
+    if ($slots+$fw>($limx+1-$xc)) {
+      $xc=0;
+      $yc++;
+      if ($yc>$limy) {
+        $np=1;
+        $yc=0;
+        $body.="showpage\n$pagehead\n";
+      }
+    }
+    if ($np) { # new page
+      $page++;
+      $np=0;
+      $body .= <<EOF;
+/Helvetica-Bold findfont
+12 scalefont
+setfont
+EOF
+      # show fleet name
+      if (defined($fleetdata{Fleet}) && $fleetdata{Fleet}) {
+        $body .= <<EOF;
+0 782 moveto
+($fleetdata{Fleet})
+show
+EOF
+      }
+      # show admiral name
+      if (defined($fleetdata{Admiral}) && $fleetdata{Admiral}) {
+        $body .= <<EOF;
+295 780 moveto
+($fleetdata{Admiral})
+dup stringwidth pop 2 div neg 0 rmoveto
+show
+EOF
+      }
+      # show page counter
+      $body .= <<EOF;
+590 780 moveto
+(Page $page of TOTALPAGES)
+dup stringwidth pop neg 0 rmoveto
+show
+EOF
+    }
+    my $vx=($xc+($slots-1)/2)*$sizex+$basex;
+    my $vy=$yc*$sizey+$basey;
+    $body.="1 setlinewidth newpath\n". ($vx-$slots/2*$sizex) ." ". ($vy+25) ." ".
+           (($slots+$fw)*$sizex) ." $sizey rectstroke\n";
+    $xc+=$slots;
+    $body .= <<EOF;
+gsave
+$vx $vy translate
+0 setlinewidth
+$sd
+grestore
+EOF
+    if ($fw) {
+      $vx=$xc*$sizex+$basex;
+      $xc++;
+      $body .= <<EOF;
+gsave
+$vx $vy translate
+0 setlinewidth
+$fighters
+grestore
+EOF
+    }
+  }
+  $body .= "showpage\n";
+  $body =~ s/TOTALPAGES/$page/g;
+  open PSFILE,">$psfile";
+  foreach my $k (keys %{$shiplib}) {
+    if (exists($::shipused{$k})) {
+      print PSFILE "$shiplib->{$k}\n";
+    }
+  }
+  print PSFILE "\n% end of ship library\n";
+  print PSFILE $body;
+  close PSFILE;
+}
+
+sub ship2ps {
+  my ($class,$name,$marker,$m)=@_;
+  my $sn=lc($class);
+  $sn=~s/\W//g;
+  $sn.='.ship';
+  my %vl=%{$m};
+  my %header=%{{ map{$_=>1} qw(Class Classification Race Navy Mass Cost Thrust Armour Hull Hullrows Power Designer Crew) }};
+  my %shipdata;
+  open SHIP,"<$sn" || return (\[],0,0);
+  while (<SHIP>) {
+    chomp;
+    s/[\x00-\x1f]//g;
+    my ($type,$value)=($_,'');
+    if (/^(.*?):\s*(.*)/) {
+      ($type,$value)=($1,$2);
+    }
+    if (exists($header{$type})) {
+      $shipdata{$type}=$value;
+    } else {
+      push @{$shipdata{Systems}->{$type}},$value;
+    }
+  }
+  close SHIP;
+  my %printdata;
+  if ($shipdata{Race} eq "Kra'Vak") {
+    push @{$printdata{Thrust}},["1 ($shipdata{Thrust})",'thrust'];
+  } elsif ($shipdata{Race} eq "Sa'Vasku") {
+    push @{$printdata{Thrust}},["1 (S)",'thrust'];
+  } else {
+    push @{$printdata{Thrust}},["0 ($shipdata{Thrust})",'thrust'];
+  }
+  my $xsize=$shipdata{Hull}/$shipdata{Hullrows}*10/2;
+  if ($shipdata{Armour}) {
+    foreach my $a (split ' ',$shipdata{Armour}) {
+      if ($a*10/2 > $xsize) {
+        $xsize=$a*10/2;
+      }
+    }
+  }
+  my $xah=$xsize;
+  if ($xsize<40) {
+    $xsize=40;
+  }
+  my $limit=int($xsize/10);
+  my @fighters;
+  foreach my $systype (keys %{$shipdata{Systems}}) {
+    my $n=0;
+    my $m=0;
+    if ($systype =~ /^PDS|FCS|FTL|ADFC|Screen Generator|Scattergun|Vapour Shroud|Cortex Node|Drone Womb|Spicule|Ortillery|Minesweeper$/) { # simple things
+      my $s=(split ' ',lc($systype))[0];
+      if ($s eq 'fcs' && $shipdata{Race} eq "Kra'Vak") {
+        $s='kfcs';
+      }
+      if ($s eq 'ftl' && $shipdata{Race} eq "Sa'Vasku") {
+        $s='sftl';
+      }
+      foreach (@{$shipdata{Systems}->{$systype}}) {
+        push @{$printdata{"$systype.$n"}},['',$s];
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    } elsif ($systype eq 'Screen Node') { # Sa'Vasku needs power requirement
+      my $power=int($shipdata{Mass}/20+0.5);
+      if ($power<1) {
+        $power=1;
+      }
+      foreach (@{$shipdata{Systems}->{$systype}}) {
+        push @{$printdata{"$systype.$n"}},["($power)",'screennode'];
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    } elsif ($systype eq 'SMM') { # missile magazines
+      my $s=(split ' ',lc($systype))[0];
+      foreach my $info (@{$shipdata{Systems}->{$systype}}) {
+        my @fill;
+        my $magid='';
+        foreach my $k (split ' ',$info) {
+          if ($k =~ /\D/) {
+            $magid=$k;
+            if (exists $vl{$k}) {
+              foreach my $n (split ' ',$vl{$k}) {
+                push @fill,(substr($n,0,1)) x substr($n,1);
+              }
+            }
+          }
+        }
+        @fill=('[',(map {'('.$_.')'} @fill),']');
+        push @{$printdata{"$systype.$n"}},[join(' ',@fill),$s,"+ $magid"];
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    } elsif ($systype eq 'Missile') { # MT Missile
+      my $s=(split ' ',lc($systype))[0];
+      foreach my $info (@{$shipdata{Systems}->{$systype}}) {
+        my $fill;
+        my $magid='';
+        foreach my $k (split ' ',$info) {
+          if ($k =~ /\D/) {
+            $magid=$k;
+            if (exists $vl{$k}) {
+              foreach my $n (split ' ',$vl{$k}) {
+                $fill=substr($n,0,1);
+              }
+            }
+          }
+        }
+        push @{$printdata{"$systype.$n"}},["($fill)",$s];
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    } elsif ($systype =~ /^Pulse Torpedo|Needle Beam|Submunition|MKP|Pod Launcher|Class \d+ HDC$/) { # things with fire-arcs and rotatable symbols
+      my $s=(split ' ',lc($systype))[0];
+      foreach my $arcset(@{$shipdata{Systems}->{$systype}}) {
+        my %arcs=map{$_ => 1} split ' ',$arcset;
+        my @arclist;
+        foreach my $arc (qw(FS F FP AP A AS)) {
+          push @arclist,(exists($arcs{$arc}))?1:0;
+        }
+        @arclist=&getfacing(@arclist);
+        if ($systype =~ /^Class (\d+) HDC$/) {
+          push @arclist,"($1)";
+          $s='hdc';
+        }
+        push @{$printdata{"$systype.$n"}},[join(' ',@arclist), $s];
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    } elsif ($systype =~ /^SML$/) { # missile launchers
+      my $s=(split ' ',lc($systype))[0];
+      foreach my $arcset(@{$shipdata{Systems}->{$systype}}) {
+        my %arcs=map{$_ => 1} split ' ',$arcset;
+        my @arclist;
+        foreach my $arc (qw(FS F FP AP A AS)) {
+          push @arclist,(exists($arcs{$arc}))?1:0;
+        }
+        my ($magid)=grep /[a-zA-Z]\d/,keys %arcs;
+        push @{$printdata{"$systype.$n"}},[join(' ',@arclist), $s, "- $magid"];
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    } elsif ($systype =~ /^SMR$/) { # missile racks
+      my $s=(split ' ',lc($systype))[0];
+      foreach my $arcset(@{$shipdata{Systems}->{$systype}}) {
+        my $fill='S';
+        my %arcs=map{$_ => 1} split ' ',$arcset;
+        my @arclist;
+        foreach my $arc (qw(FS F FP AP A AS)) {
+          push @arclist,(exists($arcs{$arc}))?1:0;
+        }
+        my ($magid)=grep /^[a-z]\d+$/,keys %arcs;
+        if (exists($vl{$magid})) {
+          $fill=$vl{$magid};
+        }
+        push @{$printdata{"$systype.$n"}},[join(' ',@arclist,"($fill)"), $s];
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    } elsif ($systype =~ /^Minelayer$/) { # Mines (another special case of simple things)
+      my $s=(split ' ',lc($systype))[0];
+      foreach my $layer (@{$shipdata{Systems}->{$systype}}) {
+        my $capacity=3;
+        foreach my $cap (split ' ',$layer) {
+          if ($cap !~ /\D/) {
+            $capacity=$cap;
+          }
+        }
+        push @{$printdata{"$systype.$n"}},[$capacity,$s];
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    } elsif ($systype =~ /^Sensor$/) { # Needs grade prepended
+      my $s=(split ' ',lc($systype))[0];
+      foreach my $item (@{$shipdata{Systems}->{$systype}}) {
+        my $type='Enhanced';
+        foreach my $gr (split ' ',$item) {
+          if ($gr eq 'Superior') {
+            $type=$gr;
+          }
+        }
+        push @{$printdata{"$systype.$n"}},["($type)",$s];
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    } elsif ($systype =~ /^ECM$/) { # Needs grade and area-ness prepended
+      my $s=(split ' ',lc($systype))[0];
+      foreach my $item (@{$shipdata{Systems}->{$systype}}) {
+        my $type='Basic';
+        my $area=0;
+        foreach my $gr (split ' ',$item) {
+          if ($gr =~ /^(Superior|Enhanced)$/) {
+            $type=$gr;
+          }
+          if ($gr eq 'Area') {
+            $area=1;
+          }
+        }
+        push @{$printdata{"$systype.$n"}},["$area ($type)",$s];
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    } elsif ($systype =~ /^Fighter Bay$/) { # fighters (special case of simple things)
+      my $s=(split ' ',lc($systype))[0];
+      foreach my $bayid (@{$shipdata{Systems}->{$systype}}) {
+        my $type='S';
+        if (exists($vl{$bayid})) {
+          $type=$vl{$bayid};
+        }
+        push @{$printdata{"$systype.$n"}},["($type)",$s];
+        push @fighters,$type;
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    } elsif ($systype eq 'Stinger Node') { # battery-type arcs with no rotation
+      my $s=(split ' ',lc($systype))[0];
+      foreach my $arcset(@{$shipdata{Systems}->{$systype}}) {
+        my $fill=' ';
+        my %arcs=map{$_ => 1} split ' ',$arcset;
+        my @arclist;
+        foreach my $arc (qw(FS F FP AP A AS)) {
+          push @arclist,(exists($arcs{$arc}))?1:0;
+        }
+        push @{$printdata{"$systype.$n"}},[join(' ',@arclist), $s];
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    } elsif ($systype eq 'Pulser') { # battery-type arcs with loadout symbol
+      my $s=(split ' ',lc($systype))[0];
+      foreach my $arcset(@{$shipdata{Systems}->{$systype}}) {
+        my $fill=' ';
+        my %arcs=map{$_ => 1} split ' ',$arcset;
+        my @arclist;
+        foreach my $arc (qw(FS F FP AP A AS)) {
+          push @arclist,(exists($arcs{$arc}))?1:0;
+        }
+        # check for magazine ID for variable-loadout
+        my ($magid)=grep /[a-zA-Z]\d/,keys %arcs;
+        if (exists($vl{$magid}) && $vl{$magid}) {
+          $fill=$vl{$magid};
+        }
+        push @{$printdata{"$systype.$n"}},[join(' ',@arclist,"($fill)"), $s];
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    } elsif ($systype eq 'Hangar Bay') { # box containing ships
+      foreach my $cap (@{$shipdata{Systems}->{$systype}}) {
+        my %info=map{$_ => 1} split ' ',$cap;
+        my ($hbid)=grep /[a-zA-Z]\d/,keys %info;
+        my @list;
+        if (exists($vl{$hbid}) && $vl{$hbid}) {
+          $vl{$hbid} =~ s/[^\dx,]//g;
+          foreach my $ent (split ',',$vl{$hbid}) {
+            if ($ent =~ /(\d+)x(\d+)/) {
+              push @list,($2) x $1;
+            } elsif ($ent =~ /(\d+)/) {
+              push @list,$1;
+            }
+          }
+          @list=sort {$::b <=> $::a} @list;
+          my $ls=scalar @list;
+          my $y=int(sqrt($ls));
+          my $x=int($ls/$y+.999);
+          push @list,($y,$x);
+          unshift @list,(0) x ($x*$y-$ls);
+          push @{$printdata{"$systype.$n"}},[join(' ',@list), 'hangarbay'];
+        } else {
+          @list=(0,0);
+        }
+      }
+    } elsif ($systype =~ /^(Hold|Passenger space|Science space|Troops)$/) { # Hold-style boxes
+      my $type=substr($systype,0,1);
+      foreach my $cap (@{$shipdata{Systems}->{$systype}}) {
+        push @{$printdata{"$systype.$n"}},["($type) $cap", 'holdbox'];
+      }
+    } elsif ($systype =~ /^Class (.*) (Battery|K-Gun|Plasma .*)$/) { # non-rotating things with class numbers and arcs
+      my $battlevel=$1;
+      my $btype='beambatt';
+      my $btype1=$2;
+      if ($btype1 eq 'Battery') {
+        $btype='beambatt';
+      }
+      if ($btype1 eq 'K-Gun') {
+        $btype='kgun';
+      }
+      if ($btype1 =~ /Plasma/) {
+        $btype='plasma';
+      }
+      foreach my $arcset (@{$shipdata{Systems}->{$systype}}) {
+        my %arcs=map{$_ => 1} split ' ',$arcset;
+        my @arclist;
+        foreach my $arc (qw(FS F FP AP A AS)) {
+          push @arclist,(exists($arcs{$arc}))?1:0;
+        }
+        push @{$printdata{"$systype.$n"}},[join(' ',@arclist,"($battlevel)"), $btype];
+        $m++;
+        if ($m==$limit) {
+          $m=0;
+          $n++;
+        }
+      }
+    }
+  }
+  my @list=sort grep !/Class .* |Stinger Node|Fighter Bay|Pulser|Vapour Shroud|Pulse Torpedo|Needle Beam|Submunition|SML|SMM|SMR|Missile|MKP|Scattergun|Thrust|FTL/,keys %printdata;
+  unshift @list,sort grep /Fighter Bay|Pulser|Vapour Shroud|Pulse Torpedo|Needle Beam|Submunition|SML|SMM|SMR|Missile|MKP|Scattergun/,keys %printdata;
+  unshift @list,sort grep /Stinger Node/,keys %printdata;
+  unshift @list,sort {$::b cmp $::a} grep /Class .* /,keys %printdata;
+  unshift @list,('Shipname','Markername','Classname');
+  push @{$printdata{Shipname}},["(Name: $name)",'name'];
+  push @{$printdata{Markername}},["(Marker: $marker)",'name'];
+  push @{$printdata{Classname}},["(Class: $shipdata{Class})",'name'];
+  push @list,'';
+  my $arm='';
+  if (defined($shipdata{Armour}) && $shipdata{Armour} ne '' && $shipdata{Armour} ne '0') {
+    push @list,'Armour';
+    my $alist=join ' ',reverse split ' ',$shipdata{Armour};
+    push @{$printdata{Armour}},["0 $alist",'armourstack'];
+  } else {
+    $arm='/OFFSET 0 def';
+  }
+  push @list,'Hull';
+  if ($shipdata{Race} eq "Sa'Vasku") { # no damage control
+    my @generators;
+    if ($shipdata{Power}<$shipdata{Hullrows}) {
+      @generators=(1) x $shipdata{Power};
+      if ($shipdata{Hull}<$shipdata{Hullrows} && $shipdata{Hull}>$shipdata{Power}) {
+        unshift @generators,(0) * ($shipdata{Hull}-$shipdata{Power});
+      }
+    } else {
+      my $hullrows=($shipdata{Hull}<$shipdata{Hullrows})?$shipdata{Hull}:$shipdata{Hullrows};
+      my $ppg=int($shipdata{Power}/$hullrows);
+      my $extra=$shipdata{Power}-$ppg*$hullrows;
+      @generators=($ppg) x ($hullrows-$extra);
+      push @generators,($ppg+1) x ($extra);
+    }
+    while (scalar @generators < $shipdata{Hullrows}) {
+      push @generators,0;
+    }
+    push @{$printdata{Hull}},["$arm ".join(' ',reverse @generators)." 1 1 $shipdata{Hull} $shipdata{Hullrows} 0",'OFFSET add hullstack'];
+  } else {
+    my $dcp=20;
+    if (defined($shipdata{Crew}) && $shipdata{Crew} eq 'Civilian') {
+      $dcp=50;
+    }
+    push @{$printdata{Hull}},["$arm 0 ".int(($shipdata{Mass}+$dcp-1)/$dcp) . " $shipdata{Hull} $shipdata{Hullrows} 1",'OFFSET add hullstack'];
+  }
+
+  my @tt;
+  my $y=25;
+  my $last=-1;
+  my $o=0;
+  my %magline;
+  my $dirty;
+  do {
+    $dirty=0;
+    foreach my $n (3..$#list) {
+      if ($list[$n+1] eq '' || $list[$n] eq '') {
+        last;
+      }
+      my @c;
+      $c[0]=scalar (@{$printdata{$list[$n]}});
+      $c[1]=scalar (@{$printdata{$list[$n+1]}});
+      unless ($c[0].$c[1] =~ /SM[ML]/) {
+        if ($c[0]+$c[1]<=$limit) {
+          my @res;
+          my $max=($c[0]>$c[1])?$c[0]:$c[1];
+          my @odd=map{$_ %2} @c;
+          if ($odd[0] && $odd[1]) {
+            foreach my $l (0..$max-1) {
+              push @res,$printdata{$list[$n]}->[$l] || ();
+              push @res,$printdata{$list[$n+1]}->[$l] || ();
+            }
+          } elsif (!$odd[0]) {
+            foreach my $l (0..$c[0]/2-1) {
+              push @res,$printdata{$list[$n]}->[$l];
+            }
+            push @res,@{$printdata{$list[$n+1]}};
+            foreach my $l ($c[0]/2..$c[0]-1) {
+              push @res,$printdata{$list[$n]}->[$l];
+            }
+          } else {
+            foreach my $l (0..$c[1]/2-1) {
+              push @res,$printdata{$list[$n+1]}->[$l];
+            }
+            push @res,@{$printdata{$list[$n]}};
+            foreach my $l ($c[1]/2..$c[1]-1) {
+              push @res,$printdata{$list[$n+1]}->[$l];
+            }
+          }
+          $printdata{$list[$n]}=\@res;
+          splice @list,$n+1,1;
+          $dirty=1;
+        }
+      }
+    }
+  } while ($dirty==1);
+  foreach my $e (@list) {
+    if ($e) {
+      my @j=@{$printdata{$e}};
+      my $odd=(scalar @j)%2;
+      my ($xd,$x0);
+      if ((scalar @j) == 1 && $e !~ /name/) {
+        $x0=0;
+        $xd=0;
+      } elsif ((scalar @j) == 1) {
+        $x0=-$xsize;
+        $xd=0;
+        $y+=15;
+      } else {
+        if ($odd) {
+          $xd=int($xsize*2/((scalar @j)-1));
+          $x0=-$xsize;
+        } else {
+          $xd=int($xsize*2/(scalar @j));
+          $x0=-$xsize+$xd/2;
+        }
+      }
+      my $x=$x0;
+      if ($e =~ /Armour|Hull/) {
+        $x-=$xah;
+        $y-=25;
+      } else {
+        $y-=25;
+      }
+      foreach my $l (@j) {
+        if (defined($l->[2]) && $l->[2]) {
+          my ($mp,$id)=split ' ',$l->[2],2;
+          if ($mp eq '+') {
+            unshift @{$magline{$id}},[$x,$y];
+          } else {
+            push @{$magline{$id}},[$x,$y];
+          }
+        }
+        push @tt,"$l->[0] $x $y $l->[1]";
+        $x+=$xd;
+      }
+      if ($e eq 'Armour') {
+        $y+=25;
+        $o=1;
+        $a=$shipdata{Armour};
+        while ($a =~ / /) {
+          $a =~ s/ /X/;
+          $o++;
+        }
+      }
+      $last=$odd;
+    }
+  }
+  foreach my $magid (keys %magline) {
+    my @clist=@{$magline{$magid}};
+    if (scalar @clist > 1) {
+      my ($xs,$ys)=@{$clist[0]};
+      $ys+=8;
+      foreach my $k (1..$#clist) {
+        my ($xf,$yf)=@{$clist[$k]};
+        $yf-=6;
+        push @tt,<<EOF;
+newpath
+$xs $ys moveto
+$xf $yf lineto
+stroke
+EOF
+      }
+    }
+  }
+  $y -= 10*(1+$o+$shipdata{Hullrows});
+  if ($shipdata{Race} =~ /Human|Kra'Vak|Phalon|Mixed/) {
+    push @tt,"35 $y coresystems";
+  }
+  if ($shipdata{Race} eq "Sa'Vasku") { # the manoeuvre table
+    my $maxthrust=int(($shipdata{Power}+.5)/$shipdata{Mass}/0.02+.99);
+    my @thrusttable;
+    foreach my $thrust (1..$maxthrust) {
+      my @t=($thrust);
+      foreach my $powerlevel (0.02, 0.04) {
+        my $powerneeded=int($shipdata{Mass}*$powerlevel*$thrust+.5);
+        if ($powerneeded<=$shipdata{Power} && $powerneeded>0) {
+          push @t,$powerneeded;
+        } else {
+          push @t,0;
+        }
+      }
+      push @thrusttable,\@t;
+    }
+    my $dirty;
+    do {
+      $dirty=0;
+      foreach my $n (0..$#thrusttable) {
+        if ($thrusttable[$n]->[1]==0) {
+          splice @thrusttable,$n,1;
+          $dirty=1;
+          last;
+        }
+      }
+      if ($dirty==0) {
+        foreach my $n (0..$#thrusttable-1) {
+          if (($thrusttable[$n]->[1] == $thrusttable[$n+1]->[1]) &&
+              ($thrusttable[$n]->[2] == $thrusttable[$n+1]->[2])) {
+            splice @thrusttable,$n,1;
+            $dirty=1;
+            last;
+          }
+        }
+      }
+    } while ($dirty);
+    my @printtable;
+    foreach my $n (@thrusttable) {
+      my ($a,$b,$c)=@{$n};
+      if ($c==0) {
+        $c='-';
+      }
+      unshift @printtable,"($b/$c) ($a)";
+    }
+    unshift @printtable,"(0) (0)";
+    push @tt,@printtable;
+    push @tt,"30 $y thrusttable";
+  }
+  push @tt,"$printdata{Thrust}->[0]->[0] 0 $y $printdata{Thrust}->[0]->[1]";
+  push @tt,"$printdata{'FTL.0'}->[0]->[0] -30 $y $printdata{'FTL.0'}->[0]->[1]";
+  my @return=(\@tt,$xsize*2,-$y);
+  # fighter control grid
+  if (@fighters) {
+    $::shipused{fightercontrol}=1;
+    push @return,(join(' ',map {"($_)"} ('@', reverse @fighters))." -60 0 fightercontrol");
+  } else {
+    push @return,'';
+  }
+  return @return;
+}
+
+sub getfacing { # NB this assumes a contiguous or evenly-distributed set of arcs
+  my @arclist=@_;
+  my @a=@arclist;
+  push @a,@arclist;
+  my $a=0;
+  map {$a+=($_?1:0)} @arclist;
+  if ($a==1 || $a==3 || $a==5) {
+    my $count=($a+1)/2;
+    my $primary=0;
+    my $state=0;
+    foreach my $n (0..$#a) {
+      if ($a[$n] && $state==1) {
+        $primary=$n;
+        $count--;
+        if ($count<=0) {
+          last;
+        }
+      } elsif ($a[$n]==0 && $state==0) {
+        $state=1;
+      }
+    }
+    $primary %= 6;
+    if ($a==1) { # don't show arcs if there's just one, rotate instead
+      @arclist=(0) x 6;
+    }
+    push @arclist,($primary-1)*60;
+  } elsif ($a==2 || $a==4) {
+    my $count=$a/2;
+    my $primary=0;
+    my $state=0;
+    foreach my $n (0..$#a) {
+      if ($a[$n] && $state==1) {
+        $primary=$n;
+        $count--;
+        if ($count<=0) {
+          last;
+        }
+      } elsif ($a[$n]==0 && $state==0) {
+        $state=1;
+      }
+    }
+    $primary %= 6;
+    push @arclist,($primary-1)*60+30;
+  } else { # all-arc or I've got confused; don't touch
+    push @arclist,0;
+  }
+  return @arclist;
+}
+
+sub shiplib {
+  my %shiplib;
+  my $state=0;
+  my $entity;
+  my $content;
+  my $DATA=<<EODATA;
+% ship components - human and generic
+
+/pds {
+  gsave translate
+  0.65 0.65 scale
+  /fourfive {200 sqrt 2 div} def
+  newpath
+  0 0 moveto
+  fourfive fourfive lineto
+  0 0 10 45 135 arc
+  0 0 lineto
+  fill
+  newpath
+  0 0 moveto
+  fourfive neg fourfive neg lineto
+  0 0 10 225 315 arc
+  0 0 lineto
+  fill
+  newpath
+  0 0 10 225 135 arcn
+  0 0 10 315 45 arc
+  stroke
+  grestore
+} def
+
+/scattergun {
+  gsave translate
+  60 120 300 {
+    dup 60 add exch
+    newpath        
+    0 0 moveto
+    dup cos 10 mul exch sin 10 mul lineto
+    dup cos 10 mul exch sin 10 mul lineto
+    closepath fill                       
+  } for
+  0 120 240 {
+    dup 60 add exch
+    newpath        
+    dup cos 10 mul exch sin 10 mul moveto
+    dup cos 10 mul exch sin 10 mul lineto
+    stroke
+  } for
+  grestore
+} def
+
+/name {
+  gsave translate
+  0 0 moveto
+  /Helvetica findfont
+  8 scalefont
+  setfont
+  show
+  grestore
+} def
+
+/beambatt {
+  gsave translate
+  /Helvetica findfont
+  8 scalefont
+  setfont
+  dup stringwidth pop 2 div neg
+  3 neg moveto
+  show
+  /showarc {
+    newpath
+    60 mul dup
+    60 add /END exch def
+    /START exch def
+    START cos 6 mul START sin 6 mul moveto
+    START cos 10 mul START sin 10 mul lineto
+    0 0 10 START END arc
+    END cos 6 mul END sin 6 mul lineto
+    0 0 6 END START arcn
+    1 eq {stroke} {fill} ifelse
+  } def
+  5 showarc
+  4 showarc
+  3 showarc
+  2 showarc
+  1 showarc
+  0 showarc
+  grestore
+} def
+
+/stinger {
+  gsave translate
+  /sstar {
+    newpath
+    4 0 moveto
+    1 1 8 {
+      dup 0.5 sub 45 mul /MID exch def
+      MID cos 2 mul MID sin 2 mul lineto
+      45 mul /END exch def
+      END cos 4 mul END sin 4 mul lineto
+    } for
+    closepath fill
+  } def
+  sstar
+  /showarc {
+    newpath
+    60 mul dup
+    60 add /END exch def
+    /START exch def
+    START cos 6 mul START sin 6 mul moveto
+    START cos 10 mul START sin 10 mul lineto
+    0 0 10 START END arc
+    END cos 6 mul END sin 6 mul lineto
+    0 0 6 END START arcn
+    1 eq {stroke} {fill} ifelse
+  } def
+  5 showarc
+  4 showarc
+  3 showarc
+  2 showarc
+  1 showarc
+  0 showarc
+  grestore
+} def
+
+/screennode {
+  gsave translate
+  /Helvetica-Bold findfont
+  8 scalefont
+  setfont
+  dup stringwidth pop 2 div neg
+  3 neg moveto
+  show
+  newpath
+  0 0 7.5 0 360 arc
+  stroke
+  0.5 setlinewidth
+  90 60 390 {
+    newpath
+    0 exch 0 exch 10 exch
+    dup 40 add arc
+    stroke
+  } for
+  grestore
+} def
+
+/cortex {
+  gsave translate
+  .4 .4 scale
+  0 0 10 0 360 arc
+  stroke
+  newpath
+  0 0 6 0 360 arc
+  fill
+  grestore
+} def
+
+/spicule {
+  gsave translate
+  0.65 0.65 scale
+  /fourfive {8 dup mul 2 mul sqrt 2 div} def
+  newpath
+  0 0 moveto
+  fourfive fourfive lineto
+  0 0 8 45 135 arc
+  0 0 lineto
+  fill
+  newpath
+  0 0 moveto
+  fourfive neg fourfive neg lineto
+  0 0 8 225 315 arc
+  0 0 lineto
+  fill
+  newpath
+  0 0 10 0 360 arc
+  stroke
+  grestore
+} def
+
+/pod {
+  gsave translate
+  rotate
+  0 -5 translate
+  newpath
+  0 0 6.5 0 360 arc
+  fill
+  gsave
+  15 rotate
+  0 1 11 {
+    30 mul /MID exch def
+    /START MID 15 sub def
+    /END MID 15 add def
+    newpath
+    START cos 6 mul START sin 6 mul moveto
+    MID cos 8 mul MID sin 8 mul lineto
+    END cos 6 mul END sin 6 mul lineto
+    closepath fill
+  } for
+  grestore
+  -3 0 6 13 rectfill
+  newpath
+  -6 13 moveto
+  6 13 lineto
+  0 20 lineto
+  closepath fill
+  1 setgray
+  newpath
+  0 0 3 0 360 arc
+  fill
+  grestore
+} def
+
+/generator {
+  gsave translate
+  0.7 0.7 scale
+  0 -5 translate
+  newpath
+  0 0 6.5 0 360 arc
+  fill
+  gsave
+  15 rotate
+  0 1 11 {
+    30 mul /MID exch def
+    /START MID 15 sub def
+    /END MID 15 add def
+    newpath
+    START cos 6 mul START sin 6 mul moveto
+    MID cos 8 mul MID sin 8 mul lineto
+    END cos 6 mul END sin 6 mul lineto
+    closepath fill
+  } for
+  grestore
+  gsave
+  1 setgray
+  newpath
+  0 0 4.5 0 360 arc
+  fill
+  grestore
+  /Helvetica-Bold findfont
+  8 scalefont
+  setfont
+  dup stringwidth pop 2 div neg
+  3 neg moveto
+  show
+  grestore
+} def
+
+/drone {
+  gsave translate
+  newpath
+  -5 10 moveto
+  -5 3
+  5 3
+  5 10 curveto
+  -5 10 moveto
+  -13 -20
+  13 -20
+  5 10 curveto
+  stroke
+  grestore
+} def
+
+/sftl {
+  gsave translate
+  newpath
+  -6 0 6 90 270 arc
+  6 -6 lineto
+  6 0 6 270 90 arc
+  closepath
+  clip
+  stroke
+  newpath
+  -12 0 moveto
+  -10 -6 -2 -6 0 0 curveto
+  2 6 10 6 12 0 curveto
+  stroke
+  grestore
+} def
+
+/thrusttable {
+  gsave translate
+  /Helvetica findfont
+  6 scalefont  
+  setfont
+  (P) (T)
+  /Y 0 def
+  {
+    /T exch def
+    /P exch def
+    gsave
+    0 Y translate
+    T (0) eq {
+      grestore
+      exit
+    } if
+    newpath
+    0 -3 moveto
+    0 3 lineto
+    -8 3 lineto
+    -8 0 3 90 270 arc
+    closepath stroke
+    newpath
+    1 3 moveto
+    1 -3 lineto
+    15 -3 lineto
+    15 0 3 270 90 arc
+    closepath stroke
+    T dup stringwidth pop 2 div neg -5 add -2 moveto show
+    P dup stringwidth pop 2 div neg 9 add -2 moveto show
+    grestore
+    /Y Y 8 sub def
+  } loop
+  grestore
+} def
+
+/kgun {
+  gsave translate
+  /Helvetica findfont
+  8 scalefont  
+  setfont
+  dup stringwidth pop 2 div neg
+  3 neg moveto
+  show
+  /showarc {
+    newpath
+    60 mul dup
+    60 add /END exch def
+    /START exch def     
+    START cos 6 mul START sin 6 mul moveto
+    START cos 10 mul START sin 10 mul lineto
+    END cos 10 mul END sin 10 mul lineto    
+    END cos 6 mul END sin 6 mul lineto
+    closepath
+    1 eq {stroke} {fill} ifelse
+  } def
+  5 showarc
+  4 showarc   
+  3 showarc
+  2 showarc
+  1 showarc
+  0 showarc
+  grestore
+} def
+
+/pulser {
+  gsave translate
+  /Helvetica findfont
+  8 scalefont  
+  setfont
+  dup stringwidth pop 2 div neg
+  3 neg moveto
+  show
+  /showarc {
+    newpath
+    60 mul dup
+    60 add /END exch def
+    /START exch def     
+    /POINT START END add 2 div def
+    START cos 6 mul START sin 6 mul moveto
+    POINT cos 10.392 mul POINT sin 10.392 mul lineto
+    END cos 6 mul END sin 6 mul lineto
+    closepath
+    1 eq {stroke} {fill} ifelse
+  } def
+  5 showarc
+  4 showarc   
+  3 showarc
+  2 showarc
+  1 showarc
+  0 showarc
+  grestore
+} def
+
+/fighter {
+  gsave translate
+  newpath
+  6 -5 moveto
+  0 11 lineto
+  -6 -5 lineto
+  closepath stroke
+  dup
+  (S) eq {
+    newpath
+    0 0 2.5 0 360 arc
+    fill
+  } {
+    /Helvetica-Bold findfont
+    7 scalefont
+    setfont
+    dup stringwidth pop 2 div neg
+    -4 moveto
+    show
+  } ifelse
+  grestore
+} def
+
+/sml {
+  gsave translate
+  newpath
+  0 5 moveto
+  -2 -4 lineto
+  0 -1 lineto
+  2 -4 lineto
+  closepath fill
+  newpath 0 0 6 0 360 arc stroke
+  /showarc {
+    newpath
+    60 mul dup
+    60 add /END exch def
+    /START exch def
+    START cos 6 mul START sin 6 mul moveto
+    START cos 10 mul START sin 10 mul lineto
+    0 0 10 START END arc
+    END cos 6 mul END sin 6 mul lineto
+    0 0 6 END START arcn
+    1 eq {stroke} if
+  } def
+  5 showarc
+  4 showarc
+  3 showarc
+  2 showarc
+  1 showarc
+  0 showarc
+  grestore
+} def
+
+/smr {
+  gsave translate
+  newpath
+  0 5 moveto
+  -2 -4 lineto
+  0 -1 lineto
+  2 -4 lineto
+  closepath
+  /DONE 0 def
+  /TYPE exch def
+  TYPE (L) eq {
+    fill
+    /DONE 1 def
+  } if
+  TYPE (E) eq {
+    stroke
+    gsave
+    0 3 translate
+    1 1.5 scale
+    0 22.5 180 {
+      dup cos /COS exch def
+      sin /SIN exch def
+      newpath
+      2 COS mul 2 SIN mul moveto
+      3 COS mul 3 SIN mul lineto
+      stroke
+    } for
+    grestore
+    /DONE 1 def
+  } if
+% 
+  TYPE (M) eq {
+    stroke
+    newpath
+    -1 0.5 moveto
+    0 -1 lineto
+    1 0.5 lineto
+    stroke
+    /DONE 1 def
+  } if
+  DONE 0 eq {
+    stroke
+  } if
+ newpath 0 0 6 0 360 arc stroke
+  /showarc {
+    newpath
+    60 mul dup
+    60 add /END exch def
+    /START exch def
+    START cos 6 mul START sin 6 mul moveto
+    START cos 10 mul START sin 10 mul lineto
+    0 0 10 START END arc
+    END cos 6 mul END sin 6 mul lineto
+    1 eq {stroke} if
+  } def
+  5 showarc
+  4 showarc
+  3 showarc
+  2 showarc
+  1 showarc
+  0 showarc
+  grestore
+} def
+
+/smm {
+  gsave translate
+  /LOADOUT exch def
+  /SIZE LOADOUT length def
+  /SPAN SIZE 6 mul 2 div 2 add def
+  newpath
+  SPAN neg 0 moveto
+  SPAN neg 8 0 8 2 arct
+  SPAN 8 SPAN 0 2 arct
+  SPAN -8 0 -8 2 arct
+  SPAN neg -8 SPAN neg 0 2 arct
+  closepath stroke
+  SIZE 1 sub 6 mul 2 div neg 0 moveto
+  /X SIZE 1 sub 6 mul 2 div neg def
+  LOADOUT {
+    newpath
+    X 5 moveto
+    -2 -9 rlineto
+    2 3 rlineto
+    2 -3 rlineto
+    closepath
+    /DONE 0 def
+    /TYPE exch def
+    TYPE (L) eq {
+      fill
+      /DONE 1 def
+    } if
+    TYPE (E) eq {
+      stroke
+      gsave
+      X 3 translate
+      1 1.5 scale
+      0 22.5 180 {
+        dup cos /COS exch def
+        sin /SIN exch def
+        newpath
+        2 COS mul 2 SIN mul moveto
+        3 COS mul 3 SIN mul lineto
+        stroke
+      } for
+      grestore
+      /DONE 1 def
+    } if
+% 
+    TYPE (M) eq {
+      stroke
+      newpath
+      X 5 moveto
+      -1 -3 rmoveto
+      1 -3 rlineto
+      1 3 rlineto
+      stroke
+      /DONE 1 def
+    } if
+    DONE 0 eq {
+      stroke
+    } if
+    /X X 6 add def
+  } forall
+  grestore
+} def
+
+/pulse {
+  gsave translate
+  gsave rotate
+  -3 -12 6 12 rectstroke
+  -3 0 6 12 rectfill
+  grestore
+  /showarc {
+    newpath
+    60 mul dup
+    60 add /END exch def
+    /START exch def
+    START cos 6 mul START sin 6 mul moveto
+    START cos 10 mul START sin 10 mul lineto
+    0 0 10 START END arc
+    END cos 6 mul END sin 6 mul lineto
+    0 0 6 END START arcn
+    1 eq {stroke} if
+  } def
+  5 showarc
+  4 showarc
+  3 showarc
+  2 showarc
+  1 showarc
+  0 showarc
+  grestore
+} def
+
+/plasma {
+  gsave translate
+  /CLASS exch def
+  /showarc {
+    newpath
+    60 mul dup
+    60 add /END exch def
+    /START exch def
+    START cos 5 mul START sin 5 mul moveto
+    START cos 10 mul START sin 10 mul lineto
+    0 0 10 START END arc
+    END cos 5 mul END sin 5 mul lineto
+    1 eq {stroke} if
+  } def
+  5 showarc
+  4 showarc
+  3 showarc
+  2 showarc
+  1 showarc
+  0 showarc
+  /STARBURST {
+    0 1 9 {
+      dup 36 mul /START exch def
+      dup 0.5 add 36 mul /MID exch def
+      1 add 36 mul /END exch def
+      START cos 5 mul START sin 5 mul moveto
+      MID cos 8 mul MID sin 8 mul lineto
+      END cos 5 mul END sin 5 mul lineto
+    } for
+  } def
+  1 setgray
+  newpath
+  STARBURST
+  fill
+  0 setgray
+  newpath
+  STARBURST
+  stroke
+  /Helvetica findfont
+  8 scalefont  
+  setfont
+  CLASS
+  dup stringwidth pop 2 div neg
+  3 neg moveto
+  show
+  grestore
+} def
+
+/vapour {
+  gsave translate
+  newpath
+  0 0 4 0 360 arc
+  fill
+  0 1 7 {
+    45 mul /START exch def
+    newpath
+    START cos 8 mul START sin 8 mul
+    2 0 360 arc
+    fill
+  } for
+  grestore
+} def
+
+/fcs {
+  gsave translate
+  .4 .4 scale
+  -10 -10 20 20 rectstroke
+  newpath
+  0 0 6 0 360 arc
+  fill
+  grestore
+} def
+
+/kfcs {
+  gsave translate
+  .4 .4 scale
+  newpath
+  13 0 moveto
+  60 60 360 {
+    dup 60 add exch
+    dup cos 13 mul exch sin 13 mul lineto
+  } for 
+  stroke
+  newpath
+  0 0 6 0 360 arc  
+  fill
+  grestore
+} def
+
+/adfc {
+  gsave translate
+  .4 .4 scale
+  -10 -10 20 20 rectstroke
+  newpath
+  -10 -10 moveto
+  10 -10 lineto
+  0 0 lineto
+  closepath fill
+  newpath
+  -10 10 moveto
+  10 10 lineto
+  0 0 lineto
+  closepath fill
+  grestore
+} def
+
+/ftl {
+  gsave translate
+  -10 -10 20 20 rectstroke
+  newpath
+  -10 0 moveto
+  -8 -8 -2 -8 0 0 curveto
+  2 8 8 8 10 0 curveto
+  stroke
+  grestore
+} def
+
+/thrust {
+  gsave translate
+  dup (S) eq {
+    pop
+    newpath
+    6 0 moveto
+    1 1 8 {   
+      dup 0.5 sub 45 mul /MID exch def   
+      MID cos 3 mul MID sin 3 mul lineto
+      45 mul /END exch def               
+      END cos 6 mul END sin 6 mul lineto
+    } for
+    closepath fill 
+  } {
+    /Helvetica-Bold findfont
+    14 scalefont
+    setfont
+    dup stringwidth pop 2 div neg
+    5 neg moveto
+    show
+  } ifelse
+  newpath
+  -12 -7 moveto
+  -12 7 lineto
+  0 13 lineto
+  12 7 lineto
+  12 -7 lineto
+  1 eq {
+    0 -13 lineto
+  } if
+  closepath
+  stroke
+  grestore
+} def
+
+/hullrow {
+  gsave translate
+  /REP exch 1 sub def
+  0 1 REP {
+    10 mul 0 8 8 rectstroke
+  } for
+  grestore
+} def
+
+/hullstack {
+  gsave translate
+  /blob {
+    newpath
+    exch 4 add
+    exch 4 add
+    2 0 360 arc
+    fill
+  } def
+  /DC exch def
+  /ROWS exch def
+  dup
+  ROWS div dup
+  dup floor sub ROWS mul round /EXTRA exch def
+  floor /BPR exch def
+  exch
+  dup /TDCP exch def
+  div ceiling /BPD exch def
+  /GEN exch def
+  /CTR BPD def
+  0 1 ROWS 1 sub {
+    /ROW exch def
+    /OFFSET ROW 10 mul neg def
+    /BIR BPR EXTRA ROW gt {1 add} if def
+    BIR 0 gt {
+      /LASTOFFSET OFFSET def
+    } if
+    BIR 0 OFFSET hullrow
+    GEN 1 eq {
+      dup 0 gt {
+        (123) cvs BPR EXTRA 0 gt {2} {1} ifelse add 10 mul OFFSET 7 add generator
+      } {
+        pop
+      } ifelse
+    } if
+    DC 1 eq {
+      {
+        CTR BIR le {
+          CTR 1 sub 10 mul OFFSET blob
+          /CTR CTR BPD add def
+          /TDCP TDCP 1 sub def
+        } {
+          exit
+        } ifelse
+      } loop
+      /CTR CTR BIR sub def
+    } if
+  } for
+  DC 1 eq {
+    TDCP 0 gt {
+      CTR 1 sub TDCP le {
+        /TDCP TDCP 1 add def
+      } if
+      1 1 TDCP {
+        1 sub neg /OF exch def
+        BIR 0 eq {0} {BIR 1 sub} ifelse OF add 10 mul LASTOFFSET blob
+      } for
+    } if
+  } if
+  grestore
+} def
+
+/armourrow {
+  gsave translate
+  /REP exch 1 sub def
+  0 1 REP {
+    newpath
+    dup 10 mul 8 add 4 moveto
+    10 mul 4 add 4 4 0 360 arc
+    stroke
+  } for
+  grestore
+} def
+
+/armourstack {
+  gsave translate
+  /OFFSET 0 def
+  {
+    dup
+    0 eq {
+      exit
+    } {
+      0 OFFSET armourrow
+      /OFFSET OFFSET 10 sub def
+    } ifelse
+  } loop
+  grestore
+} def
+
+/screen {
+  gsave translate
+  newpath
+  4 0 moveto
+  0 0 4 0 360 arc
+  fill
+  0.5 setlinewidth
+  newpath
+  0 3 9 65 115 arc
+  stroke
+  newpath
+  0 3 6 65 115 arc
+  stroke
+  grestore
+} def
+
+/needle {
+  gsave translate
+  gsave rotate
+  -1 -3.5 2 9 rectfill
+  newpath
+  0 -3.5 3 0 360 arc
+  fill
+  newpath
+  0 5.5 1 0 360 arc
+  fill
+  grestore
+  /showarc {
+    newpath
+    60 mul dup
+    60 add /END exch def
+    /START exch def
+    START cos 6 mul START sin 6 mul moveto
+    START cos 10 mul START sin 10 mul lineto
+    0 0 10 START END arc
+    END cos 6 mul END sin 6 mul lineto
+    0 0 6 END START arcn
+    1 eq {stroke} if
+  } def
+  5 showarc
+  4 showarc
+  3 showarc
+  2 showarc
+  1 showarc
+  0 showarc
+  grestore
+} def
+
+/submunition {
+  gsave translate
+  gsave rotate
+  newpath
+  0 0 6 0 360 arc
+  stroke
+  newpath
+  0 0 moveto
+  5 9 lineto
+  -5 9 lineto
+  closepath fill
+  grestore
+  /showarc {
+    newpath
+    60 mul dup
+    60 add /END exch def
+    /START exch def
+    START cos 6 mul START sin 6 mul moveto
+    START cos 10 mul START sin 10 mul lineto
+    0 0 10 START END arc
+    END cos 6 mul END sin 6 mul lineto
+    0 0 6 END START arcn
+    1 eq {stroke} if
+  } def
+  5 showarc
+  4 showarc
+  3 showarc
+  2 showarc
+  1 showarc
+  0 showarc
+  grestore
+} def
+
+/mkp {
+  gsave translate
+  gsave rotate
+  newpath
+  6 0 moveto
+  60 60 300 {
+    dup cos 6 mul exch
+    sin 6 mul         
+    lineto   
+  } for
+  closepath stroke
+  newpath
+  0 0 moveto
+  5 9 lineto
+  -5 9 lineto
+  closepath fill
+  grestore
+  /showarc {
+    newpath 
+    60 mul dup
+    60 add /END exch def
+    /START exch def     
+    START cos 6 mul START sin 6 mul moveto
+    START cos 10 mul START sin 10 mul lineto
+    0 0 10 START END arc                    
+    END cos 6 mul END sin 6 mul lineto
+    0 0 6 END START arcn              
+    1 eq {stroke} if    
+  } def
+  5 showarc
+  4 showarc
+  3 showarc
+  2 showarc
+  1 showarc
+  0 showarc
+  grestore
+} def
+
+/coresystems {
+  gsave translate
+  newpath
+  -20 0 moveto
+  -20 8 0 8 2 arct
+  20 8 20 0 2 arct
+  20 -8 0 -8 2 arct
+  -20 -8 -20 0 2 arct
+  closepath
+  stroke
+  gsave -12 0 translate
+  -5 -5 10 10 rectfill
+  1 setgray
+  0.5 setlinewidth
+  newpath
+  0 2 2 0 360 arc
+  0 -1.5 -3 {
+    -4 exch moveto
+    8 0 rlineto
+  } for
+  stroke
+  grestore
+  -5 -5 10 10 rectfill
+  1 setgray
+  gsave
+  0.9 1 scale
+  newpath
+  0 0 4 0 360 arc
+  stroke
+  grestore
+  newpath
+  0 2.5 0.7 0 360 arc
+  fill
+  newpath
+  0 -3.5 moveto
+  0.5 0 lineto
+  2 1 lineto
+  -2 1 lineto
+  -0.5 0 lineto
+  closepath fill
+  0 setgray
+  gsave 12 0 translate
+  -5 -5 10 10 rectfill
+  1 setgray
+  newpath 0 0 0.5 0 360 arc fill
+  0 60 120 {
+    gsave
+    15 add rotate
+    1 0.3 scale
+    newpath 0 0 4 0 360 arc stroke
+    grestore
+  } for
+  grestore
+  grestore
+} def
+
+/holdbox {
+  gsave translate
+  /TOTAL exch def
+  /TYPE exch def
+  /BASE TOTAL 4 div floor def
+  /EXTRA TOTAL BASE 4 mul sub def
+  BASE
+  BASE EXTRA 2 gt {1 add} if
+  BASE EXTRA 1 gt {1 add} if
+  BASE EXTRA 0 gt {1 add} if
+  0 1 3 {
+    /X exch def
+    /THIS exch cvi def
+    THIS 0 gt {
+% draw box
+      -24 X 12 mul add -10 10 20 rectstroke
+% show type
+      /Helvetica-Bold findfont
+      10 scalefont
+      setfont
+      TYPE stringwidth pop 2 div neg
+      -24 X 12 mul add 5 add add
+      1 moveto
+      TYPE show
+% show number
+      /Helvetica findfont
+      8 scalefont
+      setfont
+      THIS (12345) cvs dup stringwidth pop 2 div neg
+      -24 X 12 mul add 5 add add
+      9 neg moveto
+      show
+    } if
+  } for
+  grestore
+} def
+
+/hangarbay {
+  gsave translate
+  /XN exch 1 sub def
+  /YN exch 1 sub def
+  XN 1 add neg 5 mul  YN 1 add neg 7.5 mul
+  XN 1 add 10 mul     YN 1 add 15 mul       rectstroke
+  /Helvetica findfont
+  6 scalefont
+  setfont
+  YN -1 0 {
+    /Y exch def
+    0 1 XN {
+      /X exch def
+      dup 0 gt {
+        gsave
+        X XN 0 ne {
+          XN div
+        } if
+        0.5 sub XN 10 mul mul
+        Y YN 0 ne {
+          YN div
+        } if
+        0.5 sub YN 15 mul mul
+        translate
+        newpath
+        2 -5 2 270 0 arc
+        4 -6 lineto
+        4 3 lineto
+        0 7 lineto
+        -4 3 lineto
+        -4 -6 lineto
+        -2 -5 2 180 270 arc
+        closepath
+        fill
+        1 setgray
+        (12) cvs dup stringwidth pop 2 div neg
+        3 neg
+        moveto show
+        grestore
+      } {
+        pop
+      } ifelse
+    } for
+  } for
+  grestore
+} def
+
+/fightercontrol {
+  gsave translate
+  /Helvetica findfont
+  8 scalefont
+  setfont
+  0 0 moveto
+  (Fighter Control) show
+  /YOFF 0 def
+  {
+    dup (@) eq {
+      pop
+      exit 
+    } {
+      /NUM NUM 1 add def
+      /YOFF YOFF 1 add def
+      /Y YOFF -20 mul 1 sub def
+      0 Y 9 add 120 -19 rectstroke
+      2 Y 1 add moveto
+      NUM (123) cvs show
+      2 Y 9 sub moveto
+      dup
+      /CEF exch (L) eq {
+        9
+      } {
+        6
+      } ifelse def
+      show
+      12 Y 1 add moveto (Dmg) show
+      12 Y 9 sub moveto (CEF) show
+      0 1 1 {
+        /YY exch def
+        /RL 6 def
+        YY 1 eq {
+         /RL CEF def
+        } if
+        /YY Y YY 9 mul sub def
+        1 1 RL {
+          /XX exch 2 add 10 mul def
+          XX YY 8 8 rectstroke
+        } for
+      } for
+    } ifelse
+  } loop
+  grestore
+} def
+
+/ortillery {
+  gsave translate
+  newpath
+  6 5 moveto
+  0 -6 lineto
+  -6 5 lineto
+  closepath stroke
+  gsave
+  .6 1.2 scale
+  newpath
+  0 0 2 0 360 arc
+  fill
+  grestore
+  newpath
+  1.8 4 moveto
+  -1.8 4 lineto
+  0 1.2 lineto
+  closepath fill
+  grestore
+} def
+
+/minelayer {
+  gsave translate
+  /MINE exch def
+  /Helvetica findfont
+  5 scalefont
+  setfont
+  -4 MINE 4 mul 8 MINE -8 mul rectstroke
+  0 1 MINE 1 sub {
+    newpath
+    MINE -4 mul 4 add exch 8 mul add /Y exch def
+    0 Y 3 0 360 arc
+    (M) dup stringwidth pop 2 div neg Y 1.75 sub moveto
+    show
+    stroke
+  } for
+  grestore
+} def
+
+/minesweeper {
+  gsave translate
+  -3 -3 6 6 rectfill
+  newpath
+  -3 -9 moveto
+  -3  9 lineto
+   3 -9 moveto
+   3  9 lineto
+  -9 -3 moveto
+   9 -3 lineto
+  -9  3 moveto
+   9  3 lineto
+  stroke 
+  grestore
+} def
+
+/missile {
+  gsave translate
+  /TYPE exch def
+  newpath
+  0    10.5 moveto
+  1.5  5.5  lineto
+  1.5  -4   lineto
+  4.5  -7   lineto
+  4.5  -7.5 lineto
+  2    -7.5 lineto
+  1    -10  lineto
+  -1   -10  lineto
+  -2   -7.5 lineto
+  -4.5 -7.5 lineto
+  -4.5 -7   lineto
+  -1.5 -4   lineto
+  -1.5 5.5  lineto
+  closepath 
+  /DONE 0 def
+  /ENDURANCE 3 def
+  TYPE (E) eq {
+    stroke
+    gsave
+    0 8 translate
+    1 1.5 scale
+    0 22.5 180 {
+      dup cos /COS exch def
+      sin /SIN exch def
+      newpath
+      2 COS mul 2 SIN mul moveto
+      4 COS mul 4 SIN mul lineto
+      stroke
+    } for
+    grestore
+    /DONE 1 def
+    /ENDURANCE 1 def
+  } if
+  TYPE (M) eq {
+    stroke
+    newpath
+    -1.5 5.5  moveto
+    0    0.5  lineto
+    1.5  5.5  lineto
+    stroke
+    /DONE 1 def
+    /ENDURANCE 1 def
+  } if
+  TYPE (L) eq {
+    stroke
+    newpath
+    -1.5 -4   moveto
+    0    1    lineto
+    1.5  -4   lineto
+    stroke
+    /DONE 1 def
+    /ENDURANCE 5 def
+  } if
+% 
+  TYPE (N) eq {
+    fill
+    newpath
+    0 10.5 moveto
+    0 13 lineto
+    stroke
+    /DONE 1 def
+  } if
+  TYPE (V) eq {
+    stroke
+    newpath
+    0    10.5 moveto
+    1.5  5.5  lineto
+    1.5  1    lineto
+    -1.5 1    lineto
+    -1.5 5.5  lineto
+    closepath fill
+  } if
+  DONE 0 eq {
+    stroke
+  } if
+  1 1 ENDURANCE {
+    /E exch def
+    6 E 5 mul 15 sub 4 4 rectstroke
+  } for
+  grestore
+} def
+
+/sensor {
+  gsave translate
+  /TYPE exch def
+  newpath
+  0 3 7 180 360 arc
+  closepath TYPE (Superior) eq { fill } { stroke } ifelse
+  newpath
+  0 -4 moveto
+  3 -8 lineto
+  -3 -8 lineto
+  closepath stroke
+  newpath
+  2 3 moveto
+  0 9 lineto
+  -2 3 lineto
+  stroke
+  grestore
+} def
+
+/ecm {
+  gsave translate
+  /GRADET exch def
+  /GRADE 0 def
+  GRADET (Enhanced) eq {
+    /GRADE 1 def
+  } if
+  GRADET (Superior) eq {
+    /GRADE 2 def
+  } if
+  /AREA exch def
+  0 1 GRADE {
+    gsave
+    GRADE 2 div sub 3.5 mul 0 translate
+    1 -2 -1 {
+      1 scale
+      newpath
+      -6 5 moveto
+      -4 5 lineto
+      6 -5 lineto
+      4 -5 lineto
+      closepath fill
+    } for
+    grestore
+  } for
+  AREA 1 eq {
+    -8 GRADE 2 div 3.5 mul sub
+    -7
+    16 GRADE 2 div 7 mul add
+    14 rectstroke
+  } if
+  grestore
+} def
+
+% 
+
+EODATA
+  foreach (split /\n/,$DATA) {
+    chomp;
+    if (/^$/ && $state==1) {
+      $state=0;
+      $shiplib{$entity}=$content;
+    }
+    if ($state==1) {
+      $content.="$_\n";
+    }
+    if (/^\/([\S]+)\s+\{$/ && $state==0) {
+      $entity=$1;
+      $state=1;
+      $content="$_\n";
+    }
+  }
+  $shiplib{hullstack}="$shiplib{generator}\n$shiplib{hullrow}\n$shiplib{hullstack}";
+  $shiplib{armourstack}="$shiplib{armourrow}\n$shiplib{armourstack}";
+  return \%shiplib;
+}

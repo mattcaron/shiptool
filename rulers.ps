@@ -1,0 +1,53 @@
+/Helvetica findfont
+12 scalefont
+setfont
+0 setlinewidth
+0 1 700 {
+  /X exch def
+  newpath
+  X 300 moveto
+  X 50 mod 0 eq {
+    X 340 lineto
+  } {
+    X 10 mod 0 eq {
+      X 330 lineto
+    } {
+      X 5 mod 0 eq {
+        X 320 lineto
+      } {
+        X 310 lineto
+      } ifelse
+    } ifelse
+  } ifelse
+  stroke
+  X 50 mod 0 eq {
+    X (123) cvs
+    dup stringwidth pop 2 div neg X add 345 moveto
+    show
+  } if
+} for
+
+0 1 900 {
+  /Y exch def
+  newpath
+  300 Y moveto
+  Y 50 mod 0 eq {
+    340 Y lineto
+  } {
+    Y 10 mod 0 eq {
+      330 Y lineto
+    } {
+      Y 5 mod 0 eq {
+        320 Y lineto
+      } {
+        310 Y lineto
+      } ifelse
+    } ifelse
+  } ifelse
+  stroke
+  Y 50 mod 0 eq {
+    345 Y 4 sub moveto
+    Y (123) cvs
+    show
+  } if
+} for

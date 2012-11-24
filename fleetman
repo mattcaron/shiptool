@@ -1,0 +1,830 @@
+#! /usr/bin/perl -w
+
+# assembles *.fleet from *.ship and configuration data
+
+# TODO
+# filter by streamlining, thrust, weapons, etc.
+# restrict fighter types by race
+
+use strict;
+use Tk;
+use Tk::NewOptionmenu;
+use Tk::Pane; # Tk-GBARR
+use Tk::FileSelect;
+use Data::Dumper;
+
+my $ships;
+my @shiplist;
+my %races;
+
+my %armaments=('Fighter Bay' =>
+                [qw(Standard Fast Heavy Interceptor Attack Long-Range Torpedo)],
+               'Pulser' => [qw(Close Medium Long)],
+               'SMM' => [('Standard','Misericorde','EMP','Long Lance','Antimatter')],
+               'Missile' => [('Standard','Misericorde','EMP','Long Lance','Antimatter')],
+               'SMR' => [('Standard','Misericorde','EMP')],
+               'SMR-ER' => [('Standard','Misericorde','EMP','Long Lance','Antimatter')]);
+my %armcost=(
+fStandard => 18,
+fFast => 24,
+fHeavy => 30,
+fInterceptor => 18,
+fAttack => 24,
+'fLong-Range' => 24,
+fTorpedo => 36
+);
+my %armmass=(
+sStandard => 2,
+sMisericorde => 2,
+sEMP => 2,
+'sLong Lance' => 3,
+sAntimatter => 3
+);
+my %racefighter=('Human' => 'SFHIALT',
+                 "Kra'Vak" => 'SH',
+                 'Phalon' => 'SHI',
+                 'Mixed' => 'SFHIALT');
+
+my %shipheader=%{{ map{$_=>1} qw(Class Classification Race Navy Mass Cost Thrust Armour Hull Hullrows Crew Streamlining Power Designer) }};
+
+my %fleethead=%{{ map{$_=>1} qw(Fleet Admiral) }};
+opendir DIR,".";
+my @ships=grep /\.ship$/,readdir DIR;
+closedir DIR;
+my @width=(0,0,0,0);
+foreach my $s (@ships) {
+  my %d;
+  open SHIP,"<$s";
+  while (<SHIP>) {
+    chomp;
+    s/[\x00-\x1f]//g;
+    my ($type,$value)=($_,'');
+    if (/^(.*?):\s*(.*)/) {   
+      ($type,$value)=($1,$2);
+    }                        
+    $d{$type}=$value;
+  }
+  close SHIP;
+  $races{$d{Race}}=1;
+  my $ftl=0;
+  if ($d{FTL} =~ /^Tug (\d+)/) {
+    $ftl=$1;
+  } elsif ($d{FTL} eq 'None') {
+    $ftl=-$d{Mass};
+  }
+  $width[0]=&max($width[0],length($d{Race}));
+  $width[1]=&max($width[1],length($d{Navy}));
+  $width[2]=&max($width[2],length($d{Classification}));
+  $width[3]=&max($width[3],length($d{Class}));
+  $ships->{$d{Race}}->{$d{Navy}}->{$d{Classification}}->{$d{Class}}={
+    mass => $d{Mass},
+    class => $d{Class},
+    cost => $d{Cost},
+    navy => $d{Navy},
+    race => $d{Race},
+    hull => $d{Hull},
+    file => $s,
+    ftl => $ftl,
+    armable => (exists($d{'Fighter Bay'}) ||
+                exists($d{'Pulser'}) ||
+                exists($d{'SMM'}) ||
+                exists($d{'SMR'}) ||
+                exists($d{'Missile'}) ||
+                exists($d{'Hangar Bay'}))
+  };
+  $ships->{$d{Class}}={ %{ $ships->{$d{Race}}->{$d{Navy}}->{$d{Classification}}->{$d{Class}} }};
+}
+
+my %fleetdata;
+my $class;
+my $top=new MainWindow;
+my @racelist=sort keys %races;
+my @navylist;
+my @classiflist;
+my @classlist;
+my $select;
+my %namesused;
+my $controls=$top->Frame->pack(-anchor => 'w');
+$controls->Button(-text => 'Load',
+                  -command => \&load_shiplist)
+         ->pack(-side => 'left');
+$controls->Button(-text => 'Save',
+                  -command => \&save_shiplist)
+         ->pack(-side => 'left');
+$controls->Button(-text => 'Quit',
+                  -command => sub {$top->destroy} )
+         ->pack(-side => 'left');
+
+my $fleetshipdef=$top->Frame->pack(-anchor => 'w');
+my $fleetdef=$fleetshipdef->Frame->pack(-anchor => 'nw',
+                                        -side => 'left');
+$fleetdata{fleet}='';
+$fleetdata{admiral}='';
+my $marker='';
+my $points=0;
+my $cpoints=0;
+my $ftlcap=0;
+my $mass=0;
+my $hull=0;
+my $r=0;
+$fleetdef->Label(-text => 'Fleet name')
+         ->grid(-column => 0,
+                -row => $r);
+$fleetdef->Entry(-textvariable => \$fleetdata{fleet})
+         ->grid(-column => 1,
+                -row => $r);
+$r++;
+$fleetdef->Label(-text => 'Admiral name')
+         ->grid(-column => 0,
+                -row => 1);
+$fleetdef->Entry(-textvariable => \$fleetdata{admiral})
+         ->grid(-column => 1,
+                -row => 1);
+$r++;
+$fleetdef->Label(-text => 'Marker colour')
+         ->grid(-column => 0,
+                -row => $r);
+$fleetdef->Entry(-textvariable => \$marker)
+         ->grid(-column => 1,
+                -row => $r);
+$r++;
+$fleetdef->Label(-text => 'NPV total')
+         ->grid(-column => 0,
+                -row => $r);
+$fleetdef->Label(-textvariable => \$points)
+         ->grid(-column => 1,
+                -row => $r);
+$r++;
+$fleetdef->Label(-text => 'CPV total')
+         ->grid(-column => 0,
+                -row => $r);
+$fleetdef->Label(-textvariable => \$cpoints)
+         ->grid(-column => 1,
+                -row => $r);
+$r++;
+$fleetdef->Label(-text => 'Mass total')
+         ->grid(-column => 0,
+                -row => $r);
+$fleetdef->Label(-textvariable => \$mass)
+         ->grid(-column => 1,
+                -row => $r);
+$r++;
+$fleetdef->Label(-text => 'Hull total')
+         ->grid(-column => 0,
+                -row => $r);
+$fleetdef->Label(-textvariable => \$hull)
+         ->grid(-column => 1,
+                -row => $r);
+$r++;
+$fleetdef->Label(-text => 'FTL lift capacity')
+         ->grid(-column => 0,
+                -row => $r);
+$fleetdef->Label(-textvariable => \$ftlcap)
+         ->grid(-column => 1,
+                -row => $r);
+
+my $shipdef=$fleetshipdef->Text(-height => 15,
+                                -width => 70,
+                                -wrap => 'word')
+                         ->pack(-anchor => 'ne',
+                                -side => 'right');
+
+my $shipselect=$top->Frame->pack(-anchor => 'w');
+my $b1=$shipselect->Listbox(-relief => 'sunken',
+                            -width => $width[0],
+                            -height => 10,
+                            -setgrid => 1,
+                            -selectmode => 'extended')
+                  ->pack(-side => 'left',
+                         -fill => 'y');
+my $s1=$shipselect->Scrollbar(-command => ['yview',$b1])
+                  ->pack(-side => 'left',
+                         -fill => 'y');
+$b1->configure(-yscrollcommand => ['set',$s1]);
+$b1->insert('end',@racelist);
+$b1->activate(0);
+$b1->selectionClear(0,'end');
+$b1->selectionSet(0,0);
+$b1->bind('<ButtonRelease-1>',\&update_race);
+my $b2=$shipselect->Listbox(-relief => 'sunken',
+                            -width => $width[1],
+                            -height => 10,
+                            -setgrid => 1,
+                            -selectmode => 'extended')
+                  ->pack(-side => 'left',
+                         -fill => 'y');
+my $s2=$shipselect->Scrollbar(-command => ['yview',$b2])
+                  ->pack(-side => 'left',
+                         -fill => 'y');
+$b2->configure(-yscrollcommand => ['set',$s2]);
+$b2->insert('end',@navylist);
+$b2->activate(0);
+$b2->bind('<ButtonRelease-1>',\&update_navy);
+my $b3=$shipselect->Listbox(-relief => 'sunken',
+                            -width => $width[2],
+                            -height => 10,
+                            -setgrid => 1,
+                            -selectmode => 'extended')
+                  ->pack(-side => 'left',
+                         -fill => 'y');
+my $s3=$shipselect->Scrollbar(-command => ['yview',$b3])
+                  ->pack(-side => 'left',
+                         -fill => 'y');
+$b3->configure(-yscrollcommand => ['set',$s3]);
+$b3->insert('end',@classiflist);
+$b3->activate(0);
+$b3->bind('<ButtonRelease-1>',\&update_classif);
+my $b4=$shipselect->Listbox(-relief => 'sunken',
+                            -width => $width[3]+6,
+                            -height => 10,
+                            -setgrid => 1,
+                            -selectmode => 'single')
+                  ->pack(-side => 'left',
+                         -fill => 'y');
+my $s4=$shipselect->Scrollbar(-command => ['yview',$b4])
+                  ->pack(-side => 'left',
+                         -fill => 'y');
+$b4->configure(-yscrollcommand => ['set',$s4]);
+$b4->insert('end',@classlist);
+$b4->activate(0);
+$b4->bind('<ButtonRelease-1>',\&update_class_choicebox);
+&update_race;
+my $add=$shipselect->Button(-text => 'Add',
+                            -command => sub {&addship($b4->get('active'))})
+                   ->pack(-side => 'left');
+
+my $shiplist=$top->Scrolled('Pane',
+                            -scrollbars => 'se',
+                            -sticky => 'nw',
+                            -gridded => 'xy')
+                 ->pack(-expand => 1,
+                        -fill => 'both',
+                        -side => 'left');
+my %shipwin;
+if ($ARGV[0]) {
+  &load_shiplist($ARGV[0]);
+}
+MainLoop;
+
+sub update_race {
+  my @rlist=@racelist;
+  @{$select->[0]}=$b1->curselection;
+  if (scalar @{$select->[0]}) {
+    @rlist=map {$racelist[$_]} @{$select->[0]};
+  }
+  my %l;
+  foreach my $race (@rlist) {
+    map {$l{$_}=1} keys %{$ships->{$race}};
+  }
+  @navylist=sort keys %l;
+#  unshift @navylist,'any';
+  if (defined($b2)) {
+    $b2->delete(0,'end');
+    $b2->insert('end',@navylist);
+  }
+#  $navy=$navylist[0];
+  &update_navy;
+}
+
+sub update_navy {
+  my %l;
+  my @nlist=@navylist;
+  @{$select->[1]}=$b2->curselection;
+  if (scalar @{$select->[1]}) {
+    @nlist=map {$navylist[$_]} @{$select->[1]};
+  }
+  my @rlist=@racelist;
+  if (scalar @{$select->[0]}) {
+    @rlist=map {$racelist[$_]} @{$select->[0]};
+  }
+  foreach my $race (@rlist) {
+    if (exists $ships->{$race}) {
+      foreach my $navy (@nlist) {
+        if (exists $ships->{$race}->{$navy}) {
+          map {$l{$_}=1} keys %{$ships->{$race}->{$navy}};
+        }
+      }
+    }
+  }
+  @classiflist=
+    map {
+      join ' ',reverse split ' ',$_;
+    }
+    sort
+    map {
+      join ' ',reverse split ' ',$_;
+    }
+    keys %l;
+#  unshift @classiflist,'any';
+  #@classiflist=sort keys %{$ships->{$race}->{$navy}};
+  if (defined($b3)) {
+    $b3->delete(0,'end');
+    $b3->insert('end',@classiflist);
+  }
+#  $classif=$classiflist[0];
+  &update_classif;
+}
+
+sub update_classif {
+  my %l;
+  my @clist=@classiflist;
+  @{$select->[2]}=$b3->curselection;
+  if (scalar @{$select->[2]}) {
+    @clist=map {$classiflist[$_]} @{$select->[2]};
+  }
+  my @nlist=@navylist;
+  if (scalar @{$select->[1]}) {
+    @nlist=map {$navylist[$_]} @{$select->[1]};
+  }
+  my @rlist=@racelist;
+  if (scalar @{$select->[0]}) {
+    @rlist=map {$racelist[$_]} @{$select->[0]};
+  }
+  foreach my $race (@rlist) {
+    if (exists $ships->{$race}) {
+      foreach my $navy (@nlist) {
+        if (exists $ships->{$race}->{$navy}) {
+          foreach my $classif (@clist) {
+            if (exists $ships->{$race}->{$navy}->{$classif}) {
+              map{$l{$_} = 1} keys %{$ships->{$race}->{$navy}->{$classif}};
+            }
+          }
+        }
+      }
+    }
+  }
+  @classlist=sort {$ships->{$::b}->{cost}
+                    <=> $ships->{$::a}->{cost}
+                  } keys %l;
+  if (defined($b4)) {
+    $b4->delete(0,'end');
+    $b4->insert('end',@classlist);
+    $b4->activate(0);
+  }
+  $class=$classlist[0];
+}
+
+sub update_class_choicebox {
+  my $cl='';
+  if (defined($b4->curselection)) {
+    $cl=$classlist[$b4->curselection];
+  }
+  &update_class($cl);
+}
+
+sub update_class {
+  my ($class)=@_;
+  $shipdef->delete('1.0','end');
+  if ($class) {
+    my $info=$ships->{$class};
+    my $racenavy=$info->{navy};
+    if ($racenavy eq 'n/a') {
+      $racenavy=$info->{race};
+    }
+    my %syscount;
+    my @syslist;
+    my %sh=(Armour => 'no',
+            ocost => $info->{cost}-$info->{mass}+&ftround($info->{mass}*$info->{mass}/100));
+    open SHIPFILE,"<$info->{file}";
+    while (<SHIPFILE>) {
+      chomp;
+      s/[\x00-\x1f]//g;
+      my ($sys,$param);
+      if (/^(.*?): (.*)/) {
+        ($sys,$param)=($1,$2);
+      } else {
+        $sys=$_;
+        $param='';
+      }
+      if (exists($shipheader{$sys})) {
+        $sh{$sys}=$param;
+      } else {
+        if (exists($syscount{$sys})) {
+          $syscount{$sys}++;
+        } else {
+          $syscount{$sys}=1;
+          push @syslist,$sys;
+        }
+      }
+    }
+    close SHIPFILE;
+    $shipdef->insert('end',"$class class $sh{Classification} ($racenavy) by $sh{Designer}.\n");
+    $shipdef->insert('end',"$info->{cost}/$sh{ocost} points, $info->{mass} mass. $info->{hull} hull in $sh{Hullrows} rows\n");
+    $shipdef->insert('end',"MD $sh{Thrust}; $sh{Armour} armour\n");
+    foreach my $s (grep !/^FTL/,@syslist) {
+      my $v=$s;
+      if ($syscount{$v} > 1) {
+        $v="$syscount{$v} x $v";
+      }
+      $shipdef->insert('end',"$v\n");
+    }
+  }
+}
+
+sub addship {
+  my ($class)=@_;
+  my $n=1;
+  {
+    my $dirty;
+    do {
+      $dirty=0;
+      foreach my $m (map {$_->{marker}} @shiplist) {
+        if ($m eq "$marker $n") {
+          $n++;
+          $dirty=1;
+          last;
+        }
+      }
+    } while ($dirty);
+  }
+  push @shiplist,{class => $class,
+                  name => &get_autoname($ships->{$class}),
+                  basecost => $ships->{$class}->{cost},
+                  cost => $ships->{$class}->{cost},
+                  marker => "$marker $n"};
+  if ($ships->{$class}->{armable}) {
+    &armship($#shiplist);
+  }
+  &refresh_shiplist;
+}
+
+sub delship {
+  my ($n)=@_;
+  splice @shiplist,$n,1;
+  &refresh_shiplist;
+}
+
+sub refresh_shiplist {
+  my @entity=qw(name marker class cost ocost arm delete);
+  %namesused=();
+  $points=0;
+  $cpoints=0;
+  $ftlcap=0;
+  $mass=0;
+  $hull=0;
+  foreach my $n (0..$#shiplist) {
+    $namesused{$shiplist[$n]->{name}}=1;
+    $shiplist[$n]->{basecost}=$ships->{$shiplist[$n]->{class}}->{cost};
+    $shiplist[$n]->{cost}=$shiplist[$n]->{basecost};
+    foreach my $k (grep /^[a-z]/,keys %{$shiplist[$n]->{armament}}) {
+      my $tag=$shiplist[$n]->{armament}->{$k};
+      if (exists($armcost{substr($k,0,1).$tag})) {
+        $shiplist[$n]->{cost}+=$armcost{substr($k,0,1).$tag};
+      } elsif ($k =~ /^h(\d+)/) {
+        $tag =~ s/[^\dx,]//g;
+        foreach my $ent (split ',',$tag) {
+          if ($ent =~ /(\d+)x(\d+)/) {
+            $shiplist[$n]->{cost}+=$1*$2*2;
+          } elsif ($ent =~ /(\d+)/) {
+            $shiplist[$n]->{cost}+=$1*2;
+          }
+        }
+      }
+    }
+    $points+=$shiplist[$n]->{cost};
+    $shiplist[$n]->{ocost}=$shiplist[$n]->{cost}-$ships->{$shiplist[$n]->{class}}->{mass}
+                           +&ftround(($ships->{$shiplist[$n]->{class}}->{mass})**2/100);
+    $cpoints+=$shiplist[$n]->{ocost};
+    $mass+=$ships->{$shiplist[$n]->{class}}->{mass};
+    $hull+=$ships->{$shiplist[$n]->{class}}->{hull};
+    $ftlcap+=$ships->{$shiplist[$n]->{class}}->{ftl};
+    my $moden=-1;
+    foreach my $mode (@entity) {
+      $moden++;
+      if (exists($shipwin{"$n.$mode"})) {
+        $shipwin{"$n.$mode"}->destroy;
+      }
+      my $p=$n;
+      if ($mode eq 'delete') {
+        $shipwin{"$n.$mode"}=$shiplist->Label(-text => 'Scrap',
+                                              -foreground => 'Blue');
+        $shipwin{"$n.$mode"}->bind('<Button-1>',sub{&delship($p)});
+      } elsif ($mode eq 'arm' && $ships->{$shiplist[$p]->{class}}->{armable}) {
+        $shipwin{"$n.$mode"}=$shiplist->Label(-text => 'Arm',
+                                              -foreground => 'Blue');
+        $shipwin{"$n.$mode"}->bind('<Button-1>',sub{&armship($p)});
+      } elsif ($mode eq 'name' || $mode eq 'marker') {
+        my $w=23;
+        if ($mode eq 'marker') {
+          $w=8;
+        }
+        $shipwin{"$n.$mode"}=$shiplist->Entry(-textvariable => \$shiplist[$p]->{$mode},
+                                              -width => $w);
+      } else {
+        $shipwin{"$n.$mode"}=$shiplist->Label(-text => $shiplist[$n]->{$mode});
+        if ($mode eq 'class') {
+          $shipwin{"$n.$mode"}->bind('<Button-1>',sub{&update_class($shiplist[$n]->{class})});
+          $shipwin{"$n.$mode"}->configure(-foreground => 'Blue');
+        }
+      }
+      $shipwin{"$n.$mode"}->grid(-row => $n,
+                                 -column => $moden,
+                                 -sticky => 'nw');
+    }
+  }
+  foreach my $mode (@entity) {
+    my $n=scalar @shiplist;
+    while (exists($shipwin{"$n.$mode"})) {
+      $shipwin{"$n.$mode"}->destroy;
+      delete $shipwin{"$n.$mode"};
+      $n++;
+    }
+  }
+}
+
+sub load_shiplist {
+  my $fn;
+  unless (($fn) = @_) {
+    my $fsel=$top->FileSelect(-directory => '.',
+                              -filter => '*.fleet');
+    $fn=$fsel->Show;
+  }
+  if (defined($fn) && $fn) {
+    @shiplist=();
+    open FILE,"<$fn";
+    while (<FILE>) {
+      chomp;
+      s/[\x00-\x1f]//g;
+      my ($type,$value)=($_,'');
+      if (/^(.*?):\s*(.*)/) {
+        ($type,$value)=($1,$2);
+      }
+      if  (exists($fleethead{$type})) {
+        $fleetdata{lc($type)}=$value;
+      } else {
+        my %r;
+        $r{class}=$type;
+        foreach my $k ($value =~ /<(.*?)>/g) {
+          my ($kk,$kv)=split ' ',$k,2;
+          foreach my $l (keys %armcost) {
+            if (substr($l,0,2) eq substr($kk,0,1).substr($kv,0,1)) {
+              $kv=substr($l,1);
+              last;
+            }
+          }
+           $r{armament}->{$kk}=$kv;
+        }
+        $value =~ s/<.*?>//g;
+        $value =~ s/\s+/ /g;
+        $value =~ s/\s$//;
+        if ($value =~ /\((.*)\)/) {
+          $r{marker}=$1;
+          $value =~ s/\(.*\)//;
+          $value =~ s/\s$//;
+        }
+        $r{name}=$value;
+        push @shiplist,\%r;
+      }
+    }
+    foreach my $s (@shiplist) {
+      unless (exists($s->{cost})) {
+        $s->{cost}=$ships->{$s->{class}}->{cost};
+      }
+    }
+    &refresh_shiplist;
+    close FILE;
+  }
+}
+
+sub save_shiplist {
+  my $fn=lc($fleetdata{fleet});
+  $fn =~ s/\W//g;
+  $fn.='.fleet';
+  open FILE,">$fn";
+  foreach my $n (keys %fleetdata) {
+    print FILE ucfirst($n).": ".$fleetdata{$n}."\n";
+  }
+  foreach my $s (@shiplist) {
+    print FILE "$s->{class}: $s->{name} ($s->{marker})";
+    if (defined($s->{armament})) {
+      foreach my $k (sort grep /^[a-z]\d+/, keys %{$s->{armament}}) {
+        if ($s->{armament}->{$k}) {
+          my $q=$s->{armament}->{$k};
+          if ($q =~ /^([A-Z])[- A-Za-z]+$/) {
+            $q=$1;
+          } elsif ($q =~ /^(\d+)$/) {
+            $q="E$1";
+          }
+          print FILE " <$k $q>";
+        }
+      }
+    }
+    print FILE "\n";
+  }
+  close FILE;
+}
+
+sub armship {
+  my ($shipnum)=@_;
+  my ($name,$class)=map {$shiplist[$shipnum]->{$_}} qw(name class);
+  unless (exists($shiplist[$shipnum]->{armament})) {
+    $shiplist[$shipnum]->{armament}={};
+  }
+  my $r=$shiplist[$shipnum]->{armament};
+  my %shipdata;
+  open SHIP,"<$ships->{$shiplist[$shipnum]->{class}}->{file}";
+  while (<SHIP>) {
+    chomp;
+    s/[\x00-\x1f]//g;
+    my ($type,$value)=($_,'');
+    if (/^(.*?):\s*(.*)/) {
+      ($type,$value)=($1,$2);
+    }
+    if (exists($shipheader{$type})) {
+      $shipdata{$type}=$value;
+    } else {
+      push @{$shipdata{Systems}->{$type}},$value;
+    }
+  }
+  close SHIP;
+  my $arm=$top->Toplevel;
+  $arm->Label(-text => "Ship: $name")
+      ->grid(-column => 0,
+             -columnspan => 2,
+             -row => 0);
+  $arm->Label(-text => "Class: $class")
+      ->grid(-column => 0,
+             -columnspan => 2,
+             -row => 1);
+  my $row=2;
+  my $clean=0;
+  foreach my $system ('Fighter Bay','Pulser','Missile','SMM','SMR','Hangar Bay') {
+    foreach my $sys (@{$shipdata{Systems}->{$system}}) {
+      my %info=map {$_ => 1} split ' ',$sys;
+      my $tag=(grep /^[a-z]\d+$/,keys %info)[0];
+      my $sysext=$system;
+      if ($system eq 'SMR' && exists($info{E})) {
+        $sysext='SMR-ER';
+      }
+      my $sysname=$sysext . ' ' . join ' ',(grep !/^[a-z]\d+$/,split ' ',$sys);
+      unless (exists($r->{$tag})) {
+        $r->{$tag}='';
+      }
+      $arm->Label(-text => $sysname)
+          ->grid(-column => 0,
+                 -row => $row);
+      if ($system eq 'Hangar Bay') {
+        my $capacity=(grep /^\d+$/,split ' ',$sys)[0];
+        $r->{$tag}="1x$capacity";
+        $arm->Entry(-textvariable => \$r->{$tag})
+            ->grid(-column => 1,
+                   -row => $row);
+      } elsif ($system eq 'SMM') {
+        my $ltag=$tag;
+        my %or;
+        if (exists($r->{$tag})) {
+          map {$or{substr($_,0,1)} = substr($_,1)} split (' ',$r->{$tag});
+        }
+        $r->{capacity}=(grep /^\d+$/,split ' ',$sys)[0];
+        my %scale;
+        my $f=$arm->Frame
+                  ->grid(-column => 1,
+                         -row => $row);
+        foreach my $type (@{$armaments{$sysext}}) {
+          my $t=substr($type,0,1);
+          unless (exists($or{$t})) {
+            $or{$t}=0;
+          }
+          $r->{"$type.$ltag"}=$or{$t};
+          my $mass=$armmass{'s'.$type};
+          my $s=$f->Scale(-from => int($r->{capacity}/$mass),
+                          -to => 0,
+                          -label => $type,
+                          -variable => \$r->{"$type.$ltag"},
+                          -orient => 'vert')->pack(-side => 'left');
+          $scale{"$type.$ltag"}=$s;
+        }
+        foreach my $s (values %scale) {
+          $s->configure(-command => sub {
+                                      my $cap=$r->{capacity};
+                                      foreach my $type (@{$armaments{$sysext}}) {
+                                        $cap-=$r->{"$type.$ltag"}*$armmass{'s'.$type};
+                                      }
+                                      my @t;
+                                      foreach my $type (@{$armaments{$sysext}}) {
+                                        $scale{"$type.$ltag"}->configure(-from => $r->{"$type.$ltag"}+int($cap/$armmass{'s'.$type}));
+                                        if ($r->{"$type.$ltag"}>0) {
+                                          push @t,substr($type,0,1).$r->{"$type.$ltag"};
+                                        }
+                                      }
+                                      $r->{$ltag}=join(' ',@t);
+                                    });
+        }
+        #$capacity=int($capacity/3);
+        #$arm->Scale(-from => 0,
+        #            -to => $capacity,
+        #            -orient => 'horiz',
+        #            -variable => \$r->{$tag})
+        #    ->grid(-column => 1,
+        #           -row => $row);
+      } elsif (exists($armaments{$sysext})) {
+        if (length($r->{$tag})==1) {
+          foreach my $n (@{$armaments{$sysext}}) {
+            if ($r->{$tag} eq substr($n,0,1)) {
+              $r->{$tag}=$n;
+              last;
+            }
+          }
+        } elsif (length($r->{$tag})==0) {
+          $r->{$tag}=$armaments{$sysext}->[0];
+        }
+        my @opts=@{$armaments{$sysext}};
+        if ($system eq 'Fighter Bay') {
+          my $avail=$racefighter{$ships->{$shiplist[$shipnum]->{class}}->{race}};
+          @opts=();
+          foreach my $n (@{$armaments{$sysext}}) {
+            if (index($avail,substr($n,0,1)) != -1) {
+              push @opts,$n;
+            }
+          }
+        }
+        $arm->NewOptionmenu(-options =>  \@opts,
+                            -variable => \$r->{$tag})
+            ->grid(-column => 1,
+                   -row => $row);
+      }
+      $row++;
+      $clean=1;
+    }
+  }
+  if ($clean) {
+    $arm->Button(-text => 'Done',
+                 -command => sub{&refresh_shiplist;
+                                 $arm->destroy})
+        ->grid(-column => 0,
+               -columnspan => 2,
+               -row => $row);
+  } else {
+    $arm->destroy;
+  }
+}
+
+sub get_autoname {
+  my ($shipstruct)=@_;
+  my $prefix='';
+  my ($file,$group)=(lc($shipstruct->{navy}),$shipstruct->{class});
+  my $name='New Ship';
+  if ($file) {
+    $file.='.names';
+    if (-e $file) {
+      open NAMES,"<$file";
+      my $state=1;
+      my $count=0;
+      if ($group) {
+        $state=0;
+      }
+      while (<NAMES>) {
+        chomp;
+        s/[\x00-\x1f]//g;
+        if (/^\s*'/) {
+        } elsif (/^([^[].+?)=(.+)$/) {
+          if ($1 eq 'prefix') {
+            $prefix=$2;
+          }
+        } elsif (/^\[([^=].+)\]$/) {
+          if ($state==0 && $1 eq $group) {
+            $state=1;
+          } elsif ($group) {
+            $state=0;
+          }
+        } elsif (/^\[=(.+)\]$/) {
+          if ($state==0 && $1 eq $group) {
+            $state=1;
+          }
+        } elsif (/./ && $state==1) {
+          unless (exists($namesused{$_}) || exists($namesused{"$prefix $_"})) {
+            $count++;
+            if (rand()*$count<1) {
+              $name=$_;
+            }
+          }
+        }
+      }
+      close NAMES;
+      if ($name ne 'New Ship' && $prefix ne '') {
+        $name="$prefix $name";
+      }
+    }
+  }
+  return $name;
+}
+
+sub max {
+  my @t=@_;
+  my $a=$t[0];
+  foreach my $b (@t[1..$#t]) {
+    if ($b>$a) {
+      $a=$b;
+    }
+  }
+  return $a;
+}
+
+sub ftround {
+  my ($t)=@_;
+  $t=int($t+.5);
+  if ($t==0) {
+    $t=1;
+  }
+  return $t;
+}

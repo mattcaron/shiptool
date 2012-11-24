@@ -1,0 +1,709 @@
+<!doctype html public "-//W30//DTD W3 HTML 2.0//EN">
+
+<HTML>
+
+<!-- This file was generated using SDF 2.001 by
+     Ian Clatworthy (ianc@mincom.com). SDF is freely
+     available from http://www.mincom.com/mtr/sdf. -->
+
+<HEAD>
+<TITLE>shiptools: ship design and printing for Full Thrust 2.5</TITLE>
+</HEAD>
+<BODY>
+
+<DIV CLASS="header">
+<DIV CLASS="navigate">
+</DIV>
+</DIV>
+<DIV CLASS="title">
+<H1 CLASS="doc-title">shiptools: ship design and printing for Full Thrust 2.5</H1>
+<ADDRESS CLASS="doc-author">Roger Burton West</ADDRESS>
+<ADDRESS CLASS="doc-modified">24 May 2002</ADDRESS>
+<BR CLEAR="All">
+</DIV>
+<DIV CLASS="contents">
+<HR>
+<H2>Table of Contents</H2>
+<UL>
+<A HREF="#Introduction">1. Introduction</A><UL>
+<A HREF="#Version history">1.1. Version history</A>
+<BR>
+<A HREF="#Copyright">1.2. Copyright</A>
+<BR>
+<A HREF="#Prerequisites">1.3. Prerequisites</A></UL>
+<BR>
+<A HREF="#Design">2. Design</A><UL>
+<A HREF="#File storage">2.1. File storage</A>
+<BR>
+<A HREF="#Operation">2.2. Operation</A></UL>
+<BR>
+<A HREF="#Fleetman">3. Fleetman</A><UL>
+<A HREF="#File storage">3.1. File storage</A>
+<BR>
+<A HREF="#Operation">3.2. Operation</A></UL>
+<BR>
+<A HREF="#Fleet2ps">4. Fleet2ps</A><UL>
+<A HREF="#Introduction">4.1. Introduction</A>
+<BR>
+<A HREF="#Configuration">4.2. Configuration</A>
+<BR>
+<A HREF="#File storage">4.3. File storage</A>
+<BR>
+<A HREF="#Operation">4.4. Operation</A></UL>
+<BR>
+<A HREF="#Ship2xml and xml2ship">5. Ship2xml and xml2ship</A><UL>
+<A HREF="#Introduction">5.1. Introduction</A>
+<BR>
+<A HREF="#Prerequisites">5.2. Prerequisites</A>
+<BR>
+<A HREF="#Operation">5.3. Operation</A></UL></UL>
+</DIV>
+<DIV CLASS="main">
+<HR>
+<H1><A NAME="Introduction">1. Introduction</A></H1>
+<P>The shiptools suite is a collection of programs used for designing ships, constructing fleets, and printing fleet record sheets for Full Thrust; the rules set in use is that described by Fleet Book1 as amended in Fleet Book 2, with some optional material from the GZG mailing list. The suite covers all material from those books, including civilian ships and alien races.</P>
+<P>Design is the ship designer: it allows the design of classes of ships, but does not cover combat-time loadouts (for example, fighters and missiles).</P>
+<P>Fleetman is the fleet editor: it takes Design's ship files and allows the naming and configuration of individual ships.</P>
+<P>Fleet2ps converts Fleetman's fleet files, and Design's ship files, to Postscript record sheets, which can be printed directly to a Postscript printer or converted for other printers using a Postscript interpreter such as GhostScript.</P>
+<P>Ship2xml and xml2ship convert ship files between this system and Jon Davis' FTJava program.</P>
+<P>The shiptools suite is written in Perl/Tk; while it is designed and tested on a Unix-based system, Windows users have reported little trouble in getting it to work. There is now also a Windows-only binary version available which will work on systems which do not have Perl installed.</P>
+<H2><A NAME="Version history">1.1. Version history</A></H2>
+<H3><A NAME="0.19 (24 May 2002)">1.1.1. 0.19 (24 May 2002)</A></H3>
+<TABLE CLASS="columns" BORDER>
+<TR>
+<TD>
+design
+</TD>
+<TD>
+fixed zero-cost Sa'Vasku drive nodes
+</TD>
+</TR>
+</TABLE>
+
+<H3><A NAME="0.18 (21 May 2002)">1.1.2. 0.18 (21 May 2002)</A></H3>
+<TABLE CLASS="columns" BORDER>
+<TR>
+<TD>
+fleet2ps
+</TD>
+<TD>
+returned to standard DCP allocation system
+</TD>
+</TR>
+<TR>
+<TD>
+general
+</TD>
+<TD>
+Windows binaries now available
+</TD>
+</TR>
+</TABLE>
+
+<H3><A NAME="0.17 (9 May 2002)">1.1.3. 0.17 (9 May 2002)</A></H3>
+<TABLE CLASS="columns" BORDER>
+<TR>
+<TD>
+design
+</TD>
+<TD>
+fixed various bugs in salvo missile display
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added sensors and ECM
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+tweaked auto-mass calculation
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added auto-classification
+</TD>
+</TR>
+<TR>
+<TD>
+fleetman
+</TD>
+<TD>
+new missile loading interface
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added total hull-box count
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+replaced ship-selection dropdowns with list-boxes
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added ship summary display
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+fixed fighter point values on fleet load
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+fixed bug with loading multiple SMMs
+</TD>
+</TR>
+<TR>
+<TD>
+fleet2ps
+</TD>
+<TD>
+added sensors and ECM
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+fixed problems with missile display
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+switched to new DCP allocation system
+</TD>
+</TR>
+<TR>
+<TD>
+general
+</TD>
+<TD>
+added variable numbers of hull rows
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+changes to fleet files - variable loadouts will be lost
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+changes to ship files - missile tags and hull rows
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added option for mixed-tech ships
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added info on obtaining Ghostscript
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added ship2xml and xml2ship converters
+</TD>
+</TR>
+</TABLE>
+
+<P>It will be worth loading and re-saving any existing ship designs.</P>
+<H3><A NAME="0.16 (31 Jan 2002)">1.1.4. 0.16 (31 Jan 2002)</A></H3>
+<TABLE CLASS="columns" BORDER>
+<TR>
+<TD>
+design
+</TD>
+<TD>
+added ortillery, minelayer, minesweeper and missiles
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+improved speed of auto-mass function
+</TD>
+</TR>
+<TR>
+<TD>
+fleetman
+</TD>
+<TD>
+added automatic variable-loadout popup on ship addition
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added missiles to variable-loadout box
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added automatic ship naming
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+limited fighters to types available by race
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added total fleet mass display
+</TD>
+</TR>
+<TR>
+<TD>
+fleet2ps
+</TD>
+<TD>
+added fleet, admiral, page number headers to pages
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added ortillery, minelayer, minesweeper and missiles
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added fighter control grid for carriers
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added new scaling algorithm to take account of printable area
+</TD>
+</TR>
+<TR>
+<TD>
+general
+</TD>
+<TD>
+added rulers.ps to allow determination of printable area
+</TD>
+</TR>
+</TABLE>
+
+<H3><A NAME="0.15 (28 Nov 2001)">1.1.5. 0.15 (28 Nov 2001)</A></H3>
+<TABLE CLASS="columns" BORDER>
+<TR>
+<TD>
+design
+</TD>
+<TD>
+locking hull size presets
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+added auto-mass button
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+fixed double screen bug (thanks to Dean Gundberg)
+</TD>
+</TR>
+<TR>
+<TD>
+fleetman
+</TD>
+<TD>
+refined selection by classification
+</TD>
+</TR>
+<TR>
+<TD>
+fleet2ps
+</TD>
+<TD>
+rewrote page-space allocation to remove scaling
+</TD>
+</TR>
+</TABLE>
+
+<H3><A NAME="0.14 (26 Nov 2001)">1.1.6. 0.14 (26 Nov 2001)</A></H3>
+<TABLE CLASS="columns" BORDER>
+<TR>
+<TD>
+design
+</TD>
+<TD>
+added command-line load
+</TD>
+</TR>
+<TR>
+<TD>
+fleetman
+</TD>
+<TD>
+added selection by classification
+</TD>
+</TR>
+</TABLE>
+
+<H3><A NAME="0.13 (5 Nov 2001)">1.1.7. 0.13 (5 Nov 2001)</A></H3>
+<TABLE CLASS="columns" BORDER>
+<TR>
+<TD>
+fleet2ps
+</TD>
+<TD>
+reduced postscript output size with dependencies
+</TD>
+</TR>
+<TR>
+<TD>
+&nbsp;
+</TD>
+<TD>
+fixed non-appearance of submunitions
+</TD>
+</TR>
+</TABLE>
+
+<H3><A NAME="0.12 (29 Oct 2001)">1.1.8. 0.12 (29 Oct 2001)</A></H3>
+<TABLE CLASS="columns" BORDER>
+<TR>
+<TD>
+design
+</TD>
+<TD>
+fixed armour cost bug introduced in 0.11
+</TD>
+</TR>
+</TABLE>
+
+<H3><A NAME="0.11 (29 Oct 2001)">1.1.9. 0.11 (29 Oct 2001)</A></H3>
+<TABLE CLASS="columns" BORDER>
+<TR>
+<TD>
+design
+</TD>
+<TD>
+added worksheet output to design
+</TD>
+</TR>
+</TABLE>
+
+<H3><A NAME="0.1 (26 Oct 2001)">1.1.10. 0.1 (26 Oct 2001)</A></H3>
+<P>First public release</P>
+<H2><A NAME="Copyright">1.2. Copyright</A></H2>
+<P>This software is released under Ground Zero Games' conditions: it may be passed on to others, without charge and with this documentation.</P>
+<P>This software is and is required to be supplied entirely free of charge. If you like the software and would like to contribute to the author, you might consider buying something from <A HREF="http://www.amazon.co.uk/exec/obidos/wishlist/2U7IBPLWHDPU0/">http://www.amazon.co.uk/exec/obidos/wishlist/2U7IBPLWHDPU0/</A>, the author's wish-list at Amazon.co.uk.</P>
+<P>The rules material embedded within this software is copyright 1992, 1998 and 2000 by Ground Zero Games.</P>
+<P>Ground Zero Games may be contacted at:</P>
+<H3><A NAME="UK/Europe (and where not mentioned below)">1.2.1. UK/Europe (and where not mentioned below)</A></H3>
+<P>Ground Zero Games, PO Box 337, Needham Market, Suffolk, IP6 8LN, United Kingdom</P>
+<P>+44 1449 722322</P>
+<P><A HREF="mailto:jon@gzg.com">jon@gzg.com</A></P>
+<H3><A NAME="Australasia">1.2.2. Australasia</A></H3>
+<P>Eureka Miniatures, 10 Woorayl Street, Carnegie, Victoria 3136, Australia</P>
+<P>+61 3 9568 4085</P>
+<P><A HREF="mailto:nicr@eurekamin.com.au">nicr@eurekamin.com.au</A></P>
+<H2><A NAME="Prerequisites">1.3. Prerequisites</A></H2>
+<H3><A NAME="Pure perl version">1.3.1. Pure perl version</A></H3>
+<P>You will need the following:</P>
+<UL>
+<LI>Perl v5 (5.005 or anything later should work)
+<LI>The Tk and Tk::GBARR modules installed and working</UL>
+<P>Copy NewOptionmenu.pm into a Tk module directory (wherever Frame.pm is stored is suitable).</P>
+<P>If you are using Windows, ActiveState Perl (<A HREF="http://www.activestate.com/">http://www.activestate.com/</A>) appears to be the Perl implementation of choice. Various people have reported that the shiptools packages work under Windows, but I do not have the resources to investigate or support this myself.</P>
+<H3><A NAME="Windows binary version">1.3.2. Windows binary version</A></H3>
+<P>You will need:</P>
+<UL>
+<LI>Windows</UL>
+<P>All the content has been packaged in Windows binaries; many thanks to Jerry Acord (<A HREF="mailto:acord@imagiware.com">acord@imagiware.com</A>, <A HREF="http://imagiware.com/acord/">http://imagiware.com/acord/</A>) for this. Saved files are directly compatible with the pure-Perl version.</P>
+<HR>
+<H1><A NAME="Design">2. Design</A></H1>
+<H2><A NAME="File storage">2.1. File storage</A></H2>
+<P>Design stores its files in the current working directory. It uses files only when loading and saving ship designs.</P>
+<H2><A NAME="Operation">2.2. Operation</A></H2>
+<P>Start design from the command-line or by double-clicking:</P>
+<PRE>
+./design
+</PRE>
+<P>You may optionally give the name of a ship file to load.</P>
+<H3><A NAME="Control buttons">2.2.1. Control buttons</A></H3>
+<TABLE CLASS="columns" BORDER>
+<TR CLASS="heading">
+<TD>
+<STRONG>Button</STRONG>
+</TD>
+<TD>
+<STRONG>Effect</STRONG>
+</TD>
+</TR>
+<TR>
+<TD>
+Load
+</TD>
+<TD>
+Loads a saved ship design
+</TD>
+</TR>
+<TR>
+<TD>
+Save
+</TD>
+<TD>
+Saves the current ship design
+</TD>
+</TR>
+<TR>
+<TD>
+Worksheet
+</TD>
+<TD>
+Pops up a window with a design worksheet for the current ship
+</TD>
+</TR>
+<TR>
+<TD>
+Clear
+</TD>
+<TD>
+Resets the current ship design
+</TD>
+</TR>
+<TR>
+<TD>
+Quit
+</TD>
+<TD>
+Leaves the program
+</TD>
+</TR>
+</TABLE>
+
+<P>Note that the filename used by &quot;Save&quot; is automatically generated from the ship's class name; if you have a sufficiently large collection of ships, it is entirely possible that you may find class names clashing. I am working on a solution to this.</P>
+<H3><A NAME="Upper section">2.2.2. Upper section</A></H3>
+<P>The upper section of the main window contains ship parameters: class name, hull mass, and so on. The class name will be used to generate the filename under which the ship is saved. Navy identification will be used to separate groups of ships in the fleet manager.</P>
+<P>Note that changing the technology base of the ship will delete all systems. The &quot;Mixed&quot; tech base allows use of all human, Kra'Vak and Phalon systems; note that I do not recommend this.</P>
+<P>Selecting pre-set hull strengths (&quot;Weak&quot;, &quot;Average&quot;, etc.) will set the current hull strength to the appropriate fraction of total mass, and will maintain this fraction when hull mass changes. (If you do not want this to happen, select the pre-set strength, then select &quot;Free&quot; to unlock the numeric hull mass control.)</P>
+<P>The &quot;Auto&quot; hull mass box will attempt to find the smallest hull mass which can contain the selected components. If you selected components that cannot be contained in any hull - e.g. thrust 19 and FTL, which together require 105% of ship mass - the search could go on forever; for this reason, it fails immediately if 1000000 MASS is not sufficient to hold all components.</P>
+<P>The &quot;Guess&quot; box for the type of ship brings up a list of suggested classifications (Destroyer, Frigate, etc.) based on the current hull mass and number of fighter bays. It is likely that this function will become more sophisticated in time.</P>
+<P>The point cost and remaining mass of the ship are updated continuously. There is nothing to stop you from saving an illegal design (this may be added later).</P>
+<H3><A NAME="Lower section">2.2.3. Lower section</A></H3>
+<P>The lower section of the main window contains ship systems: weapons, defences, and others. Select the system you wish to add from the drop-down list; controls will appear to allow you to set the various parameters.</P>
+<P>The &quot;Count&quot; control, which is common to almost all systems, sets the number of systems of that exact type (including firing arcs); this allows the size of the lower section to be kept to a manageable level. Other common controls allow for power level, arc selection, and so on.</P>
+<P>One slightly non-intuitive function is the &quot;tag&quot; for SML and SMM systems; this indicates which missile tubes are fed from which magazine. Each group of SMLs and SMM with the same tag number is considered a single missile-fire network.</P>
+<P>If a control section has a red background, you have made an illegal selection; this usually applies to weapons with the wrong number of arcs (e.g. a 4-arc class 2 beam battery). Some effort is made to disallow illegal selections.</P>
+<P>As you add systems, new system selectors will appear at the bottom of the lower section - you may need to scroll down to see them.</P>
+<HR>
+<H1><A NAME="Fleetman">3. Fleetman</A></H1>
+<H2><A NAME="File storage">3.1. File storage</A></H2>
+<P>Fleetman stores its files in the current working directory. It uses ship files at startup and when selecting or arming ships, name files when adding ships, and fleet files only when loading and saving fleets.</P>
+<H2><A NAME="Operation">3.2. Operation</A></H2>
+<P>Start fleetman from the command-line or by double-clicking:</P>
+<PRE>
+./fleetman
+</PRE>
+<P>You may optionally give the name of a fleet file to load.</P>
+<H3><A NAME="Control buttons">3.2.1. Control buttons</A></H3>
+<TABLE CLASS="columns" BORDER>
+<TR CLASS="heading">
+<TD>
+<STRONG>Button</STRONG>
+</TD>
+<TD>
+<STRONG>Effect</STRONG>
+</TD>
+</TR>
+<TR>
+<TD>
+Load
+</TD>
+<TD>
+Loads a saved fleet
+</TD>
+</TR>
+<TR>
+<TD>
+Save
+</TD>
+<TD>
+Saves the current fleet
+</TD>
+</TR>
+<TR>
+<TD>
+Quit
+</TD>
+<TD>
+Leaves the program
+</TD>
+</TR>
+</TABLE>
+
+<H3><A NAME="Upper section">3.2.2. Upper section</A></H3>
+<P>The upper section of the main window contains fleet parameters: fleet name, admiral's name, and marker identification. The fleet name will be used to generate the filename under which the fleet is saved; the marker identification will be used to generate a marker name for individual ships (and is usually set to a colour name).</P>
+<P>The point cost, mass total and hull box total of the fleet are updated whenever a ship is added, deleted or rearmed.</P>
+<P>FTL lift capacity shows the total available lift capacity of the fleet. If it is zero or positive, the fleet as a whole is able to move by FTL. It is increased by the addition of tugs to the fleet, and reduced by the addition of ships without FTL drive.</P>
+<P>To the right of this section is the ship summary window; this will be filled with a summary of a ship's capabilities when the class is selected, either from the ship selection window or from the fleet list.</P>
+<P>Choose ships to add to the fleet by selecting race (and hence technology base), navy (if applicable), classification and individual ship class; then click the &quot;add&quot; button. You need not select categories, but may find this more convenient; multiple categories may be selected simultaneously.  If a ship has variable-loadout items (fighters, missiles, salvo missiles, pulsers settings and contents of hangar bays), the arming window will appear automatically (see below).</P>
+<H3><A NAME="Lower section">3.2.3. Lower section</A></H3>
+<P>The lower section of the main window contains the list of ships. Set name (defaults to &quot;New Ship&quot; or an automatically-generated name) and marker ID (the root marker ID, set above, followed by a number). Use the &quot;Arm&quot; button (if present) to reselect variable-loadout items; use the &quot;Scrap&quot; button to delete the ship.</P>
+<H3><A NAME="Arming window">3.2.4. Arming window</A></H3>
+<P>Setting up of fighters, missiles and pulsers is obvious. (Note that this system uses the proposed missile updates as seen at <A HREF="http://firedrake.org/memorybank/Archive/2001/sep2001/msg00670.html">http://firedrake.org/memorybank/Archive/2001/sep2001/msg00670.html</A>.) SMMs display multiple sliders, one per possible type of missile.</P>
+<P>Hangar bays are rather more trouble. Specifying small craft is done with a line of text: 1x20 is a single 20-mass ship, while 4x5 is four 5-mass ships. If you want to specify more than one type of small craft, separate the descriptions with commas: 4x2,2x6 is four 2-mass craft and two 6-mass. (If you can think of a good GUI for this, please let me know!)</P>
+<H3><A NAME="Automatic ship naming">3.2.5. Automatic ship naming</A></H3>
+<P>If a fleet names file exists, it will be used automatically to generate names for ships as they are added to the fleet. These names can of course be edited normally.</P>
+<P>These types of line are valid in the fleet names file:</P>
+<UL>
+<LI>prefix=NNN - which sets the prefix for ship names (e.g. RNS, VKK, KRS, etc.)
+<LI>[classname] - meaning that the following lines are valid names for ships of that class. (This is an exact, case-sensitive match.)
+<LI>[=classname] - meaning that the following lines are valid names for ships of that class, while not making them invalid for ships of the class already set.
+<LI>' comment text - any line starting with an apostrophe will be ignored.
+<LI>any other text - a ship name for the current class.</UL>
+<P>The file should be named for the navy for which it contains ship name information: the file for the NAC would be called &quot;nac.names&quot;.</P>
+<P>Example:</P>
+<PRE>
+' this file contains ship names for the New Anglian Confederation
+prefix=RNS
+
+[Eastwood]
+Eastwood
+Schwarzenegger
+Hamilton
+Weaver
+Stallone
+van Damme
+Lundgren
+Connery
+
+[Howe]
+Anson
+Beatty
+Blake
+[=Howe Mk II]
+Cunningham
+Drake
+Farragut
+(etc.)
+</PRE>
+<P>So a Howe Mk II could be called Drake, Farragut or Cunningham; a Howe could be called any of those names, or Anson, Beatty or Blake.</P>
+<HR>
+<H1><A NAME="Fleet2ps">4. Fleet2ps</A></H1>
+<H2><A NAME="Introduction">4.1. Introduction</A></H2>
+<P>Fleet2ps is entirely non-interactive; all editing should be done in Design or Fleetman.</P>
+<P>Fleet2ps produces a PostScript file. Many modern printers are able to accept such a file directly; if you have one that isn't, or you are unfortunate enough to be using a system which does not allow you to send files directly to the printer, download Ghostscript, which is a free implementation of the PostScript engine. <A HREF="http://www.cs.wisc.edu/~ghost/">http://www.cs.wisc.edu/~ghost/</A> is a good place to start.</P>
+<H2><A NAME="Configuration">4.2. Configuration</A></H2>
+<P>Early in the fleet2ps program file is a line:</P>
+<PRE>
+<B>my</B> @printer=(12,582,13,829);
+</PRE>
+<P>This should be set to the boundaries of the printable area of your printer. If you don't know these already, print the included file &quot;rulers.ps&quot; and insert, in order, the minimum and maximum horizontal and minimum and maximum vertical values visible on the page.</P>
+<P>Windows users will not be able to do this. See below.</P>
+<H2><A NAME="File storage">4.3. File storage</A></H2>
+<P>Fleet2ps expects to find its files in the current working directory.</P>
+<H2><A NAME="Operation">4.4. Operation</A></H2>
+<P>Start fleet2ps from the command-line or by double-clicking:</P>
+<PRE>
+./fleet2ps sample.fleet &gt;sample.ps
+</PRE>
+<P>The result is a PostScript file, which may be printed or converted to other formats as appropriate. To print immediately (on a Unix system):</P>
+<PRE>
+E:./fleet2ps sample.fleet |lpr
+</PRE>
+<P>If you do not specify a fleet file on the command line, fleet2ps will start its graphical interface, while will allow you to select the fleet file and the output file, and change the printer size parameters.</P>
+<HR>
+<H1><A NAME="Ship2xml and xml2ship">5. Ship2xml and xml2ship</A></H1>
+<H2><A NAME="Introduction">5.1. Introduction</A></H2>
+<P>The ship2xml and xml2ship programs convert ships between the format saved by the design program (.ship) and the XML format used by Jon Davis' FTJava program (see <A HREF="http://home.nycap.rr.com/davisje/ftjava/index.html">http://home.nycap.rr.com/davisje/ftjava/index.html</A> for more information).</P>
+<P>There are no Windows binary versions yet, as these programs are very much in a state of flux.</P>
+<H2><A NAME="Prerequisites">5.2. Prerequisites</A></H2>
+<P>The xml2ship converter relies on the XML::Simple parser module.</P>
+<H2><A NAME="Operation">5.3. Operation</A></H2>
+<P>Simply run the program with one or more filenames as argument:</P>
+<UL>
+/ship2xml example.ship
+<BR>
+/xml2ship example.xml</UL>
+</DIV>
+<DIV CLASS="footer">
+<DIV CLASS="navigate">
+</DIV>
+</DIV>
+
+</BODY>
+</HTML>

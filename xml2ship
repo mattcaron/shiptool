@@ -1,0 +1,178 @@
+#! /usr/bin/perl -w
+
+use strict;
+use XML::Simple;
+use Data::Dumper;
+
+my %systemmap=(
+  'Ship' => {Mass => 'Mass',
+             Hull => 'Hull',
+             Armor => 'Armour',
+             FTLDrive => 'FTL',
+             MainDrive => 'Thrust',
+             Designer => 'Designer',
+             ShipClass => 'Classification',
+             ClassName => 'Class',
+             Race => 'Navy',
+             PointValue => 'Cost'},
+  'Electronics' => {AreaDefenseFireControl => 'ADFC',
+                    FireControl => 'FCS'},
+  'Weapons' => {BeamBattery => 'Battery',
+                KineticGun => 'K-Gun',
+                FighterBay => 'Fighter Bay',
+                HangerBay => 'Hangar Bay',
+                NeedleBeam => 'Needle Beam',
+                PointDefense => 'PDS',
+                PulseTorpedo => 'Pulse Torpedo',
+                SalvoMissileLauncher => 'SML',
+                SalvoMissileMagazine => 'SMM',
+                SalvoMissileRack => 'SMR',
+                SubmunitionPack => 'Submunition',
+                Scattergun => 'Scattergun',
+                MultipleKineticPenetratorPack => 'MKP'},
+  'Defenses' => {Screen => 'Screen Generator'}
+);
+
+my @shipheader=qw(Class Classification Race Navy Mass Cost Thrust Armour Hull Hullrows Crew Streamlining Power Designer FTL);
+my %shipheader=map{$_=>1} @shipheader;
+
+my %hullmult=(
+  Fragile => 0.1,
+  Weak => 0.2,
+  Average => 0.3,
+  Strong => 0.4,
+  Super => 0.5
+);
+
+foreach my $file (@ARGV) {
+  my %shiptab=(
+    FTL => 'None',
+    Hullrows => 4,
+    Crew => 'Military',
+    Streamlining => 'None',
+    Race => 'Human',
+    Designer => 'Unknown'
+  );
+  my @syslist;
+  my $r=XMLin($file,
+              keyattr => [],
+              forcearray => 1,
+              suppressempty => undef,
+              forcecontent => 1,
+              keeproot => 1);
+  my $str=[];
+  &parse($str,$r);
+  my %stack;
+  foreach my $cmd (@{$str}) {
+    my ($command,$mode,@params)=@{$cmd};
+    if ($command eq 'cont' || $command eq 'one') {
+      if (defined($params[0]) && defined($params[1])) {
+        $stack{$params[0]}=$params[1];
+      }
+    }
+    if ($command eq 'end' || $command eq 'one') {
+      if (exists $shipheader{$mode}) {
+        if ($mode eq 'Armour') {
+          $shiptab{$mode}=$stack{totalArmor};
+        } elsif ($mode eq 'Thrust') {
+          $shiptab{$mode}=$stack{initialThrust};
+        } elsif ($mode eq 'FTL') {
+          $shiptab{$mode}='Normal';
+        } elsif ($mode eq 'Hull') {
+          if ($stack{type} eq 'Custom') {
+            $shiptab{$mode}=$stack{totalHullBoxes};
+          } else {
+            $shiptab{$mode}=&ftround($stack{value}*$hullmult{$stack{type}});
+          }
+        } else {
+          $shiptab{$mode}=$stack{content};
+        }
+      } else {
+        my $arcs=0;
+        my $k='';
+        my @v;
+        if ($mode =~ /^(Battery|K-Gun)$/) {
+          $k="Class $stack{rating} $mode";
+          $arcs=1;
+        } elsif ($mode =~ /^(Needle Beam|Pulse Torpedo|SML|SMR|Submunition|MKP)$/) {
+          $k=$mode;
+          $arcs=1;
+        } else {
+          $k=$mode;
+        }
+        if ($arcs) {
+          my $a=$stack{arcs} || 'All arcs';
+          $a =~ s/[\(\)]//g;
+          if ($a eq 'All arcs') {
+            $a='F/FP/AP/A/AS/FS';
+          }
+          push @v,(split '/',$a);
+        }
+        if (@v) {
+          $k.=": ".join(' ',@v);
+        }
+        push @syslist,$k;
+      }
+      %stack=();
+    }
+  }
+  my $ofile=$file;
+  $ofile =~ s/\.xml//;
+  $ofile .= '.ship';
+  open F,">$ofile";
+  foreach my $v (@shipheader) {
+    if (exists($shiptab{$v})) {
+      print F "$v: $shiptab{$v}\n";
+    }
+  }
+  print F map{"$_\n"} @syslist;
+  close F;
+}
+
+sub parse {
+  my ($str,$r,@prefix)=@_;
+  if (ref($r) eq 'HASH') {
+    my $j='';
+    foreach my $k (keys %{$r}) {
+      if (ref($r->{$k}) eq 'ARRAY') {
+        foreach my $s (@{$r->{$k}}) {
+          &parse($str,$s,$k,@prefix);
+        }
+      } else {
+        if (exists ($systemmap{$prefix[1]}->{$prefix[0]})) {
+          $j=$systemmap{$prefix[1]}->{$prefix[0]};
+        }
+        if ($j) {
+          push @{$str},['cont',$j,$k,$r->{$k}];
+        }
+      }
+    }
+    if ($j) {
+      push @{$str},['end',$j];
+    }
+  } else {
+    my $j='';
+    if (defined($r)) {
+      if (exists ($systemmap{$prefix[0]}->{$r})) {
+        $j=$systemmap{$prefix[0]}->{$r};
+      }
+    } else {
+      $r='';
+      if (exists ($systemmap{$prefix[1]}->{$prefix[0]})) {
+        $j=$systemmap{$prefix[1]}->{$prefix[0]};
+      }
+    }
+    if ($j) {
+      push @{$str},['one',$j,$r];
+    }
+  }
+}
+
+sub ftround {
+  my ($t)=@_;
+  $t=int($t+.5);
+  if ($t==0) {
+    $t=1;
+  }
+  return $t;
+}

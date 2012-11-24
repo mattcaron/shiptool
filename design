@@ -1,0 +1,1507 @@
+#! /usr/bin/perl -w
+
+# TODO
+#  don't save illegal designs
+
+use strict;
+use Tk;
+use Tk::NewOptionmenu;
+use Tk::Pane; # Tk-GBARR
+use Tk::NumEntry; # Tk-GBARR
+use Tk::FileSelect;
+#use Data::Dumper;
+
+my $cip=0;
+my %shipdata=(Race => 'Human',
+              Mass => 1,
+              Hull => 1,
+              Hullrows => 4,
+              Thrust => 0,
+              Power => 0,
+              Armour => [0,0,0,0],
+              FTL => 'Normal',
+              FTLx => 0,
+              Designer => 'Nobody',
+              Navy => 'n/a',
+              Class => 'Unknown',
+              Classification => 'n/a',
+              Streamlining => 'None',
+              Crew => 'Military');
+my @syslist;
+my @worksheet;
+my $preset='Free';
+my @presets=qw(Free Fragile Weak Average Strong Super);
+my %presets=map {$presets[$_] => $_/10} (1..5);
+my $pointview=0;
+my @sensors=qw(Enhanced Superior);
+my @ecm=qw(Basic Enhanced Superior);
+my @hullrowval=(3,4,5,6);
+my @hullrowcost=(3,2,1.5,1);
+my @techbase=qw(Human Kra'Vak Sa'Vasku Phalon Mixed);
+my %techlist=("Human" => ['None',
+                          'Battery',
+                          'SML',
+                          'SMM',
+                          'SMR',
+                          'Missile',
+                          'Submunition',
+                          'Needle Beam',
+                          'Pulse Torpedo',
+                          'PDS',
+                          'ADFC',
+                          'FCS',
+                          'Screen Generator',
+                          'Fighter Bay',
+                          'Ortillery',
+                          'Minelayer',
+                          'Minesweeper'],
+              "Kra'Vak" => ['None',
+                            'K-Gun',
+                            'MKP',
+                            'Scattergun',
+                            'FCS',
+                            'Fighter Bay'],
+              "Sa'Vasku" => ['None',
+                             'Stinger Node',
+                             'Pod Launcher Node',
+                             'Drone Womb',
+                             'Screen Node',
+                             'Spicule',
+                             'Cortex Node'],
+              "Phalon" => ['None',
+                           'Pulser',
+                           'Plasma Bolt',
+                           'ADFC',
+                           'FCS',
+                           'Vapour Shroud',
+                           'Fighter Bay'],
+              "Mixed" => ['None',
+                          'Battery',
+                          'SML',
+                          'SMM',
+                          'SMR',
+                          'Missile',
+                          'Submunition',
+                          'Needle Beam',
+                          'Pulse Torpedo',
+                          'PDS',
+                          'ADFC',
+                          'FCS',
+                          'Screen Generator',
+                          'Fighter Bay',
+                          'Ortillery',
+                          'Minelayer',
+                          'Minesweeper',
+                          'K-Gun',
+                          'MKP',
+                          'Scattergun',
+                          'Pulser',
+                          'Plasma Bolt',
+                          'Vapour Shroud']);
+# generic items
+foreach my $race (keys %techlist) {
+  push @{$techlist{$race}},('Sensor',
+                            'ECM',
+                            'Hold',
+                            'Passenger space',
+                            'Science space',
+                            'Troops',
+                            'Hangar Bay');
+
+}
+my @arcs=qw(F FS AS A AP FP);
+
+my %wd;
+my $top=new MainWindow;
+my $controls=$top->Frame->pack(-anchor => 'w');
+$controls->Button(-text => 'Load',
+                  -command => \&load)
+         ->pack(-side => 'left');
+$controls->Button(-text => 'Save',
+                  -command => \&save)
+         ->pack(-side => 'left');
+$controls->Button(-text => 'Worksheet',
+                  -command => \&worksheet)
+         ->pack(-side => 'left');
+$controls->Button(-text => 'Clear',
+                  -command => \&clear)
+         ->pack(-side => 'left');
+$controls->Button(-text => 'Quit',
+                  -command => sub{$top->destroy})
+         ->pack(-side => 'left');
+my $std=$top->Frame->pack;
+my $row=0;
+$std->Label(-text => 'Class name')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+$std->Entry(-textvariable => \$shipdata{Class})
+    ->grid(-column => 1,
+           -row => $row,
+           -sticky => 'w');
+$row++;
+$std->Label(-text => 'Type of ship')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+{
+  my $fr=$std->Frame
+             ->grid(-column => 1,
+                    -row => $row,
+                    -sticky => 'w');
+  $fr->Entry(-textvariable => \$shipdata{Classification})
+     ->grid(-column => 0,
+            -row => 0,
+            -sticky => 'w');
+  $wd{autoclassif}=$fr->Button(-text => 'Guess')
+                      ->grid(-column => 1,
+                             -row => 0,
+                             -sticky => 'w');
+}
+$row++;
+$std->Label(-text => 'Crew type')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+$std->NewOptionmenu(-options => ['Military','Civilian'],
+                    -variable => \$shipdata{Crew})
+    ->grid(-column => 1,
+           -row => $row,
+           -sticky => 'w');
+$row++;
+$std->Label(-text => 'Designer')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+$std->Entry(-textvariable => \$shipdata{Designer})
+    ->grid(-column => 1,
+           -row => $row,
+           -sticky => 'w');
+$row++;
+$std->Label(-text => 'Tech base')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+$wd{race}=$std->NewOptionmenu(-options => \@techbase,
+                    -variable => \$shipdata{Race})
+    ->grid(-column => 1,
+           -row => $row,
+           -sticky => 'w');
+$row++;
+$std->Label(-text => 'Navy')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+$wd{navy}=$std->Entry(-textvariable => \$shipdata{Navy},
+                      -width => 6)
+    ->grid(-column => 1,
+           -row => $row,
+           -sticky => 'w');
+$row++;
+$std->Label(-text => 'Hull size')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+{
+  my $fr=$std->Frame
+             ->grid(-column => 1,
+                    -row => $row,
+                    -sticky => 'w');
+  $wd{mass}=$fr->NumEntry(-textvariable => \$shipdata{Mass},
+                          -width => 4)
+               ->grid(-column => 0,
+                      -row => 0,
+                      -sticky => 'w');
+  $wd{automass}=$fr->Button(-text => 'Auto')
+                   ->grid(-column => 1,
+                          -row => 0,
+                          -sticky => 'w');
+}
+$row++;
+$std->Label(-text => 'Streamlining')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+$std->NewOptionmenu(-options => [qw(None Partial Full)],
+                    -variable => \$shipdata{Streamlining})
+    ->grid(-column => 1,
+           -row => $row,
+           -sticky => 'w');
+$row++;
+$wd{'hull.label'}=$std->Label(-text => 'Hull integrity')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+{
+  my $fr=$std->Frame
+             ->grid(-column => 1,
+                    -row => $row,
+                    -sticky => 'w');
+  $wd{hull}=$fr->NumEntry(-textvariable => \$shipdata{Hull},
+                           -width => 3)
+      ->grid(-column => 0,
+             -row => 0,
+             -sticky => 'w');
+  $wd{preset}=$fr->NewOptionmenu(-options => \@presets,
+                                 -variable => \$preset)
+      ->grid(-column => 1,
+             -row => 0,
+             -sticky => 'w');
+  $fr->Label(-text => 'in')
+     ->grid(-column => 2,
+             -row => 0,
+             -sticky => 'w');
+  $wd{hullrows}=$fr->NewOptionmenu(-options => \@hullrowval,
+                                   -variable => \$shipdata{Hullrows})
+     ->grid(-column => 3,
+             -row => 0,
+             -sticky => 'w');
+  $fr->Label(-text => 'rows')
+     ->grid(-column => 4,
+             -row => 0,
+             -sticky => 'w');
+}
+$row++;
+$std->Label(-text => 'Power')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+$wd{power}=$std->NumEntry(-textvariable => \$shipdata{Power},
+                           -state => 'disabled',
+                           -width => 3)
+    ->grid(-column => 1,
+           -row => $row,
+           -sticky => 'w');
+$row++;
+$std->Label(-text => 'Thrust')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+$wd{thrust}=$std->NumEntry(-textvariable => \$shipdata{Thrust},
+                           -width => 3)
+    ->grid(-column => 1,
+           -row => $row,
+           -sticky => 'w');
+$row++;
+$wd{'armour.label'}=$std->Label(-text => 'Armour')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+$wd{armourframe}=$std->Frame
+    ->grid(-column => 1,
+           -row => $row,
+           -sticky => 'w');
+foreach my $layer (0..3) {
+  $wd{"armour.$layer"}=$wd{armourframe}->NumEntry(-textvariable => \$shipdata{Armour}->[$layer],
+                                                  -width => 3,
+                                                  -state => 'disabled')
+            ->grid(-column => $layer,
+                   -row => 0,
+                   -sticky => 'we');
+}
+$wd{"armour.0"}->configure(-state => 'normal');
+$row++;
+$std->Label(-text => 'FTL')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+{
+  my $fr=$std->Frame
+             ->grid(-column => 1,
+                    -row => $row,
+                    -sticky => 'w');
+  $wd{ftl}=$fr->NewOptionmenu(-options => [qw(None Normal Tug)],
+                             -variable => \$shipdata{FTL})
+    ->pack(-side => 'left');
+  $fr->Label(-text => 'Extra mass:')
+    ->pack(-side => 'left');
+  $wd{ftlx}=$fr->NumEntry(-textvariable => \$shipdata{FTLx},
+                        -width => 3,
+                        -state => 'disabled')
+    ->pack(-side => 'left');
+}
+$row++;
+$std->Label(-text => 'Remaining mass')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+$wd{massleft}=$std->Label(-text => '0')
+    ->grid(-column => 1,
+           -row => $row,
+           -sticky => 'w');
+$row++;
+$std->Label(-text => 'Point cost')
+    ->grid(-column => 0,
+           -row => $row,
+           -sticky => 'w');
+$wd{cost}=$std->Label(-textvariable => \$pointview)
+    ->grid(-column => 1,
+           -row => $row,
+           -sticky => 'w');
+
+my $sys=$top->Scrolled('Pane',
+                       -scrollbars => 'e',
+                       -sticky => 'nsw',
+                       -gridded => 'xy')
+            ->pack(-expand => 1,
+                   -fill => 'both',
+                   -anchor => 'w',
+                   -side => 'left');
+&appendsys;
+
+$wd{race}->configure(-command => sub {
+                       my $hl='Hull integrity';
+                       my $al='Armour';
+                       if ($shipdata{Race} eq "Sa'Vasku") {
+                         $hl='Biomass';
+                         $al='Carapace';
+                         $wd{power}->configure(-state => 'normal');
+                       } else {
+                         $wd{power}->configure(-state => 'disabled');
+                         $shipdata{Power}=0;
+                       }
+                       if ($shipdata{Race} eq 'Phalon' && $shipdata{Race} eq 'Mixed') {
+                         $al='Shell (inner first)';
+                         foreach my $layer(1..3) {
+                           $wd{"armour.$layer"}->configure(-state => 'normal');
+                         }
+                       } else {
+                         foreach my $layer(1..3) {
+                           $shipdata{Armour}->[$layer]=0;
+                           $wd{"armour.$layer"}->configure(-state => 'disabled');
+                         }
+                       }
+                       $wd{'hull.label'}->configure(-text => $hl);
+                       $wd{'armour.label'}->configure(-text => $al);
+                       foreach my $n (0..$#syslist) {
+                         if (exists($wd{"chooser.$n"})) {
+                           $syslist[$n]->{name}='None';
+                           $wd{"chooser.$n"}->configure(-options => $techlist{$shipdata{Race}});
+                           foreach my $v ($wd{"content.$n"}->children) {
+                             $v->destroy;
+                           }
+                         }
+                       }
+                     });
+foreach my $v (grep /^hull.\d+\/.*/,keys %wd) {
+  $v =~ /\d+\/(.*)/;
+  my $mul=$1;
+  $wd{$v}->configure(-command => sub {
+                                       $shipdata{Hull}=&ftround($shipdata{Mass}*$mul);
+                                     });
+}
+$wd{ftl}->configure(-command => sub {
+                      if ($shipdata{FTL} eq 'Tug') {
+                        $wd{ftlx}->configure(-state => 'normal');
+                      } else {
+                        $shipdata{FTLx}=0;
+                        $wd{ftlx}->configure(-state => 'disabled');
+                      }
+                     });
+$wd{preset}->configure(-command => sub {
+                         if ($preset eq 'Free') {
+                           $wd{hull}->configure(-state => 'normal');
+                         } else {
+                           $shipdata{Hull}=&ftround($shipdata{Mass}*$presets{$preset});
+                           $wd{hull}->configure(-state => 'disabled');
+                         }
+                       });
+$wd{automass}->configure(-command => sub {
+                           my $m=$shipdata{Mass};
+                           my $h=$shipdata{Hull};
+                           my $free=$wd{massleft}->cget('-text');
+                           $shipdata{Mass}=1000000;
+                           $cip=0;
+                           &check;
+                           $cip=1;
+                           if ($wd{massleft}->cget('-text')>=0) {
+                             my $fail;
+                             $shipdata{Mass}=0;
+                             {
+                               my $pcused=0;
+                               if ($preset ne 'Free') {
+                                 $pcused+=100*$presets{$preset};
+                               } else {
+                                 $pcused+=10;
+                               }
+                               if ($shipdata{Streamlining} ne 'None') {
+                                 if ($shipdata{Streamlining} eq 'Partial') {
+                                   $pcused+=10;
+                                 } elsif ($shipdata{Streamlining} eq 'Full') {
+                                   $pcused+=20;
+                                 }
+                               }
+                               if ($shipdata{FTL} ne 'None') {
+                                 $pcused+=10;
+                               }
+                               if ($shipdata{Thrust}>0) {
+                                 if ($shipdata{Race} eq "Sa'Vasku") {
+                                   $pcused+=10;
+                                 } else {
+                                   $pcused+=$shipdata{Thrust}*5;
+                                 }   
+                               }                            
+                               foreach my $n (0..$#syslist) {
+                                 if ($syslist[$n]->{name} =~ /^Screen /) {
+                                   $pcused+=5;
+                                 }
+                               }
+                               my $sysest=$m*(1-$pcused/100)-$free;
+                               if ($pcused<100) {
+                                 $shipdata{Mass}=int(($sysest/(1-$pcused/100)));
+                               } else {
+                                 $shipdata{Mass}=1;
+                               }
+                               do {
+                                 $cip=0;
+                                 if ($preset eq 'Free') {
+                                   $shipdata{Hull}=$h;
+                                 }
+                                 &check;
+                                 $cip=1;
+                                 if ($wd{massleft}->cget('-text')<0) {
+                                   $shipdata{Mass}=&max(int($shipdata{Mass}*1.1),$shipdata{Mass}+1);
+                                 }
+                               } while ($wd{massleft}->cget('-text')<0);
+                               do {
+                                 $cip=0;
+                                 if ($preset eq 'Free') {
+                                   $shipdata{Hull}=$h;
+                                 }
+                                 &check;
+                                 $cip=1;
+                                 if ($wd{massleft}->cget('-text')>=0) {
+                                   $shipdata{Mass}=&min(int($shipdata{Mass}*.95),$shipdata{Mass}-1);
+                                 }
+                               } while ($wd{massleft}->cget('-text')>=0);
+                             }
+                             do {
+                               $fail=0;
+                               $shipdata{Mass}++;
+                               $cip=0;
+                               if ($preset eq 'Free') {
+                                 $shipdata{Hull}=$h;
+                               }
+                               &check;
+                               $cip=1;
+                               if ($wd{massleft}->cget('-text')<0) {
+                                 $fail=1;
+                               }
+                             } while ($fail);
+                           } else {
+                             $shipdata{Mass}=$m;
+                           }
+                           $cip=0;
+                         });
+$wd{autoclassif}->configure(-command => sub {
+                              my $fm=0;
+                              foreach my $sn (map {$_->{name}} @syslist) {
+                                if ($sn eq 'Fighter Bay') {
+                                  $fm++;
+                                }
+                              }
+                              my $m=$shipdata{Mass};
+                              my @c;
+                              if ($fm>3) {
+                                if ($m>=80 && $m<=140) {
+                                  push @c,'Escort Carrier';
+                                }
+                                if ($m>=120 && $m<=180) {
+                                  push @c,'Light Carrier';
+                                }
+                                if ($m>=160) {
+                                  push @c,'Heavy Carrier';
+                                }
+                                if ($m>=150) {
+                                  push @c,'Attack Carrier';
+                                }
+                              } else {
+                                if ($m<=10) {
+                                  push @c,'Scoutship';
+                                } 
+                                if ($m>=8 && $m<=16) {
+                                  push @c,'Corvette';
+                                }
+                                if ($m>=14 && $m<=26) {
+                                  push @c,'Frigate';
+                                }
+                                if ($m>=24 && $m<=36) {
+                                  push @c,'Destroyer';
+                                }
+                                if ($m>=30 && $m<=50) {
+                                  push @c,'Heavy Destroyer';
+                                }
+                                if ($m>=40 && $m<=60) {
+                                  push @c,'Light Cruiser';
+                                }
+                                if ($m>=50 && $m<=70) {
+                                  push @c,'Patrol Cruiser';
+                                  push @c,'Escort Cruiser';
+                                }
+                                if ($m>=60 && $m<=90) {
+                                  push @c,'Heavy Cruiser';
+                                }
+                                if ($m>=80 && $m<=110) {
+                                  push @c,'Battlecruiser';
+                                }
+                                if ($m>=100 && $m<=140) {
+                                  push @c,'Battleship';
+                                }
+                                if ($m>=120 && $m<=160) {
+                                  push @c,'Battledreadnought';
+                                }
+                                if ($m>=140 && $m<=180) {
+                                  push @c,'Dreadnought';
+                                }
+                                if ($m>=160) {
+                                  push @c,'Superdreadnought';
+                                }
+                              }
+                              if (scalar @c > 1) {
+                                my $classbox=$top->Toplevel;
+                                foreach my $pc (@c) {
+                                  $classbox->Button(-text => $pc,
+                                                    -command => sub{
+                                                      $shipdata{Classification}=$pc;
+                                                      $classbox->destroy
+                                                    })
+                                           ->pack(-side => 'top');
+                                }
+                              } else {
+                                $shipdata{Classification}=$c[0];
+                              }
+                            });
+
+if ($ARGV[0]) {
+  &load($ARGV[0]);
+}
+$top->repeat(500,\&check);
+MainLoop;
+
+sub check {
+  if ($cip) {
+    return;
+  }
+  $cip=1;
+  if ((scalar @syslist == 0) || ($syslist[$#syslist]->{name} ne 'None')) {
+    &appendsys;
+  }
+  for (my $n=$#syslist; $n>0; $n--) {
+    if ($syslist[$n]->{name} eq 'None' && $syslist[$n-1]->{name} eq 'None') {
+      $wd{"chooser.$n"}->destroy;
+      $wd{"content.$n"}->destroy;
+      pop @syslist;
+    } else {
+      last;
+    }
+  }
+  @worksheet=();
+  if ($preset ne 'Free') {
+    $shipdata{Hull}=&ftround($shipdata{Mass}*$presets{$preset});
+  } else {
+    $shipdata{Hull}=&max(&ftround($shipdata{Mass}/10),$shipdata{Hull});
+  }
+  my $mass=$shipdata{Mass};
+  my $points=$shipdata{Mass};
+  my $mfp=$shipdata{Mass};
+  push @worksheet,['Basic Hull','('.$shipdata{Mass}.')',$shipdata{Mass}];
+  $mass-=$shipdata{Hull};
+  {
+    if ($shipdata{Hull}<6) {
+      $shipdata{Hullrows}=4;
+    }
+    my $hp=&ftround($hullrowcost[$shipdata{Hullrows}-3]*$shipdata{Hull});
+    $points+=$hp;
+    push @worksheet,["Hull Integrity (in $shipdata{Hullrows} rows)",$shipdata{Hull},$hp];
+  }
+  if ($shipdata{Streamlining} ne 'None') {
+    my $mm=0;
+    if ($shipdata{Streamlining} eq 'Partial') {
+      $mm=&ftround($shipdata{Mass}*0.1);
+    } elsif ($shipdata{Streamlining} eq 'Full') {
+      $mm=&ftround($shipdata{Mass}*0.2);
+    }
+    push @worksheet,["$shipdata{Streamlining} streamlining",$mm,$mm*2];
+    $mass-=$mm;
+    $points+=$mm*2;
+  }
+  {
+    my ($mm,$pp)=(0,0);
+    foreach my $layer (0..3) {
+      $mm+=$shipdata{Armour}->[$layer];
+      $pp+=2*$shipdata{Armour}->[$layer]*($layer+1);
+    }
+    $mass-=$mm;
+    $points+=$pp;
+    if ($mm) {
+      push @worksheet,['Armour',$mm,$pp];
+    }
+  }
+  if ($shipdata{Race} eq "Sa'Vasku") {
+    $mass-=$shipdata{Power};
+    $points+=2*$shipdata{Power};
+    push @worksheet,['Power Generators',$shipdata{Power},2*$shipdata{Power}];
+  }
+  if ($shipdata{FTL} ne 'None') {
+    my $drivemass;
+    if ($shipdata{FTL} eq 'Tug') {
+      $drivemass=&ftround($shipdata{Mass}*.10+$shipdata{FTLx}*.20);
+    } else {
+      $drivemass=&ftround($shipdata{Mass}*.10);
+    }
+    $mass-=$drivemass;
+    $points+=$drivemass*2;
+    push @worksheet,['FTL Drive',$drivemass,2*$drivemass];
+  }
+  {
+    my $drivemass=0;
+    if ($shipdata{Thrust}>0) {
+      if ($shipdata{Race} eq "Sa'Vasku") {
+        $drivemass=&ftround($shipdata{Mass}*.10);
+      } else {
+        $drivemass=&ftround($shipdata{Mass}*$shipdata{Thrust}*.05);
+      }
+      $mass-=$drivemass;
+      my $pp=0;
+      my $adv='';
+      if ($shipdata{Race} eq "Kra'Vak") {
+        # advanced drive
+        $pp=$drivemass*3;
+        $adv='A';
+      } elsif ($shipdata{Race} eq "Sa'Vasku") {
+        # cheap advanced drive
+        $pp=$drivemass*2;
+        $adv='A';
+      } else {
+        # basic drive
+        $pp=$drivemass*2;
+      }
+      $points+=$pp;
+      push @worksheet,["Main Drive (Thrust $shipdata{Thrust}$adv)",$drivemass,$pp];
+    }
+  }
+  my $sc=0;
+  push @worksheet,['Sub-total',0,0];
+  foreach my $n (0..$#syslist) {
+    my $sys=$syslist[$n];
+    my $sn=$sys->{name};
+    my $illegal=0;
+    my ($mm,$pp)=(0,0);
+    if ($sys->{name} eq 'Battery') {
+      if ($sys->{class} == 1) {
+        map {$sys->{arcs}->{$_}=1} @arcs;
+        $sys->{arccount}=6;
+        $mm=1;
+      } elsif ($sys->{class} == 2) {
+        if ($sys->{arccount}==6) {
+          $mm=3;
+        } elsif ($sys->{arccount}==3) {
+          $mm=2;
+        } else {
+          $illegal=1;
+        }
+      } else {
+        $mm=2**($sys->{class}-1);
+        if ($sys->{arccount}>1) {
+          $mm+=(2**($sys->{class}-3))*($sys->{arccount}-1);
+        }
+        if ($sys->{arccount}==0) {
+          $illegal=1;
+        }
+      }
+      $pp=$mm*3;
+      $sn="Class $sys->{class} Batt ($sys->{arccount} arc)";
+    } elsif ($sys->{name} eq 'SML') {
+      if ($sys->{arccount}==3) {
+        $mm=3;
+        $pp=$mm*3;
+      } else {
+        $illegal=1;
+      }
+    } elsif ($sys->{name} eq 'SMM') {
+      $mm=$sys->{size};
+      $pp=$mm*3;
+      $sn.=" ($sys->{size} mass)";
+    } elsif ($sys->{name} eq 'SMR') {
+      if ($sys->{arccount}==3) {
+        $mm=4;
+        if ($sys->{extended}==1) {
+          $mm=5;
+          $sn.=' (ER)';
+        }
+      } else {
+        $illegal=1;
+      }
+      $pp=$mm*3;
+    } elsif ($sys->{name} eq 'Submunition') {
+      $mm=1;
+      $pp=3;
+    } elsif ($sys->{name} eq 'Needle Beam') {
+      $mm=2;
+      $pp=6;
+    } elsif ($sys->{name} eq 'Pulse Torpedo') {
+      if ($sys->{arccount}>=1 && $sys->{arccount}<=3) {
+        $mm=3+$sys->{arccount};
+        $sn.=" ($sys->{arccount} arc)";
+      } else {
+        $illegal=1;
+      }
+      $pp=$mm*3;
+    } elsif ($sys->{name} eq 'PDS') {
+      $mm=1;
+      $pp=3;
+    } elsif ($sys->{name} eq 'ADFC') {
+      $mm=2;
+      $pp=8;
+    } elsif ($sys->{name} eq 'FCS') {
+      $mm=1;
+      $pp=4;
+    } elsif ($sys->{name} eq 'Screen Generator') {
+      if (defined($sys->{count})) {
+        $sc+=$sys->{count};
+      } else {
+        $sc++;
+      }
+      $sn='None';
+    } elsif ($sys->{name} eq 'Fighter Bay') {
+      $mfp-=9;
+      $mm=9;
+      $pp=27;
+    } elsif ($sys->{name} eq 'Missile') {
+      $mm=2;
+      $pp=6;
+    } elsif ($sys->{name} eq 'Ortillery') {
+      $mm=3;
+      $pp=9;
+    } elsif ($sys->{name} eq 'Minelayer') {
+      $mm=2+$sys->{capacity};
+      $pp=6+2*$sys->{capacity};
+    } elsif ($sys->{name} eq 'Minesweeper') {
+      $mm=5;
+      $pp=15;
+    } elsif ($sys->{name} eq 'K-Gun') {
+      if ($sys->{class} == 1) {
+        map {$sys->{arcs}->{$_}=1} @arcs;
+        $sys->{arccount}=6;
+        $mm=2;
+      } elsif ($sys->{class} == 2) {
+        &arclimit($sys,1,2);
+        $mm=2+$sys->{arccount};
+      } else {
+        &arclimit($sys,1,1);
+        $mm=($sys->{class}-2)*3+2;
+      }
+      $pp=$mm*4;
+      $sn="Class $sys->{class} K-gun ($sys->{arccount} arc)";
+    } elsif ($sys->{name} eq 'MKP') {
+      &arclimit($sys,1,1);
+      $mm=1;
+      $pp=4;
+    } elsif ($sys->{name} eq 'Scattergun') {
+      $mm=1;
+      $pp=5;
+    } elsif ($sys->{name} eq 'Stinger Node') {
+      &arclimit($sys,3,3);
+      $mm=2;
+      $pp=6;
+    } elsif ($sys->{name} eq 'Pod Launcher Node') {
+      &arclimit($sys,1,1);
+      $mm=3;
+      $pp=9;
+    } elsif ($sys->{name} eq 'Drone Womb') {
+      $mm=3;
+      $pp=9;
+    } elsif ($sys->{name} eq 'Screen Node') {
+      $mm=&ftround($shipdata{Mass}/20);
+      if ($mm<3) {
+        $mm=3;
+      }
+      $pp=$mm*3;
+    } elsif ($sys->{name} eq 'Spicule') {
+      $mm=1;
+      $pp=3;
+    } elsif ($sys->{name} eq 'Cortex Node') {
+      $mm=1;
+      $pp=4;
+    } elsif ($sys->{name} eq 'Pulser') {
+      if ($sys->{arccount}==1) {
+        $mm=2;
+      } elsif ($sys->{arccount}==3) {
+        $mm=3;
+      } elsif ($sys->{arccount}==6) {
+        $mm=4;
+      } else {
+        $illegal=1;
+      }
+      $pp=$mm*5;
+      $sn.=" ($sys->{arccount} arc)";
+    } elsif ($sys->{name} eq 'Plasma Bolt') {
+      &arclimit($sys,3,3);
+      $mm=$sys->{class}*5;
+      $pp=$mm*3;
+    } elsif ($sys->{name} eq 'Vapour Shroud') {
+      $mm=&ftround($shipdata{Mass}/20);
+      $pp=$mm*3;
+    } elsif ($sys->{name} eq 'Hold' || $sys->{name} eq 'Passenger space' ||
+             $sys->{name} eq 'Science space' || $sys->{name} eq 'Troops') {
+      $mm=$sys->{size};
+      $mfp-=$sys->{size};
+      $pp=0;
+      $sn.=" ($sys->{size} mass)";
+    } elsif ($sys->{name} eq 'Hangar Bay') {
+      $mm=&ftround($sys->{cap}*1.5);
+      $pp=$mm*3;
+      $sn.=" ($sys->{cap} capacity)";
+    } elsif ($sys->{name} eq 'Sensor') {
+      if ($sys->{grade} eq 'Enhanced') {
+        $mm=1;
+      } elsif ($sys->{grade} eq 'Superior') {
+        $mm=2;
+      }
+      $sn=$sys->{grade}.' '.$sn;
+      $pp=$mm*15;
+    } elsif ($sys->{name} eq 'ECM') {
+      if ($sys->{grade} eq 'Basic') {
+        $mm=2;
+      } elsif ($sys->{grade} eq 'Enhanced') {
+        $mm=4;
+      } elsif ($sys->{grade} eq 'Superior') {
+        $mm=8;
+      }
+      if ($sys->{area}==1) {
+        $mm*=1.5;
+        $sn="Area $sn";
+      }
+      $sn=$sys->{grade}.' '.$sn;
+      $pp=$mm*10;
+    }
+    if ($sn ne 'None') {
+      if (defined($sys->{count})) {
+        $mm*=$sys->{count};
+        $pp*=$sys->{count};
+        if ($sys->{count} ne 1) {
+          $sn.=' x '.$sys->{count};
+        }
+      }
+      push @worksheet,[$sn,$mm,$pp];
+    }
+    $mass-=$mm;
+    $points+=$pp;
+    if ($illegal) {
+      unless ($wd{"content.$n"}->cget('-background') eq 'red') {
+        $wd{"content.$n"}->configure(-background => 'red')
+      }
+    } else {
+      if ($wd{"content.$n"}->cget('-background') eq 'red') {
+        $wd{"content.$n"}->configure(-background => 'grey85')
+      }
+    }
+  }
+  if ($sc>0) {
+    my $mm=0;
+    if ($sc>=2) {
+      $sc-=2;
+      $mm=&max(6,&ftround($shipdata{Mass}/10));
+    }
+    $mm+=&max(3,&ftround($shipdata{Mass}/20))*$sc;
+    my $pp=$mm*3;
+    push @worksheet,['Screen generators',$mm,$pp];
+    $mass-=$mm;
+    $points+=$pp;
+  }
+  push @worksheet,['Sub-total',0,0];
+  push @worksheet,['Total',0,0];
+  $wd{massleft}->configure(-text => $mass);
+  my $opoints=$points-$shipdata{Mass}+&ftround($mfp*$mfp/100);
+  $shipdata{Cost}=$points;
+  $pointview="$points / $opoints";
+  $cip=0;
+}
+
+sub ftround {
+  my ($t)=@_;
+  $t=int($t+.5);
+  if ($t==0) {
+    $t=1;
+  }
+  return $t;
+}
+
+sub min {
+  my @t=@_;
+  my $a=$t[0];
+  foreach my $b (@t[1..$#t]) {
+    if ($b<$a) {
+      $a=$b;
+    }
+  }
+  return $a;
+}
+
+sub max {
+  my @t=@_;
+  my $a=$t[0];
+  foreach my $b (@t[1..$#t]) {
+    if ($b>$a) {
+      $a=$b;
+    }
+  }
+  return $a;
+}
+
+sub appendsys {
+  my $n=scalar @syslist;
+  $syslist[$n]->{name}='None';
+  $syslist[$n]->{count}=1;
+  $wd{"content.$n"}=$sys->Frame
+                         ->grid(-column => 1,
+                                -row => $n);
+  $wd{"chooser.$n"}=$sys->NewOptionmenu(-options => $techlist{$shipdata{Race}},
+                                         -variable => \$syslist[$n]->{name},
+                                         -command => sub{&changesys($n)})
+                         ->grid(-column => 0,
+                                -row => $n,
+                                -sticky => 'w');
+}
+
+sub changesys {
+  my ($n)=@_;
+  foreach my $v ($wd{"content.$n"}->children) {
+    $v->destroy;
+  }
+  my $name=$syslist[$n]->{name};
+  map {delete $syslist[$n]->{$_}} grep !/^name$/,keys %{$syslist[$n]};
+  if ($name ne 'None') {
+    $syslist[$n]->{count}=1;
+    $wd{"content.$n"}->Label(-text => 'Count:')
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->NumEntry(-textvariable => \$syslist[$n]->{count},
+                                -width => 2)
+                     ->pack(-side => 'left');
+  }
+  if ($name eq 'Battery') {
+    $syslist[$n]->{class}=1;
+    $wd{"content.$n"}->Label(-text => 'Class:')
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->NumEntry(-textvariable => \$syslist[$n]->{class},
+                                -width => 2)
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->Label(-text => 'Arcs:')
+                     ->pack(-side => 'left');
+    &arclist($wd{"content.$n"},$n)->pack(-side => 'left');
+  } elsif ($name eq 'Minelayer') {
+    $syslist[$n]->{capacity}=3;
+    $wd{"content.$n"}->Label(-text => 'Mines:')
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->NumEntry(-textvariable => \$syslist[$n]->{capacity},
+                                -width => 2)
+                     ->pack(-side => 'left');
+  } elsif ($name eq 'SML') {
+    $wd{"content.$n"}->Label(-text => 'Arcs:')
+                     ->pack(-side => 'left');
+    &arclist($wd{"content.$n"},$n,3)->pack(-side => 'left');
+    $syslist[$n]->{tag}=1;
+    $wd{"content.$n"}->Label(-text => 'Tag:')
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->NumEntry(-textvariable => \$syslist[$n]->{tag},
+                                -width => 2)
+                     ->pack(-side => 'left');
+  } elsif ($name eq 'SMM') {
+    $syslist[$n]->{size}=0;
+    $wd{"content.$n"}->Label(-text => 'Mass:')
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->NumEntry(-textvariable => \$syslist[$n]->{size},
+                                -width => 2)
+                     ->pack(-side => 'left');
+    $syslist[$n]->{tag}=1;
+    $wd{"content.$n"}->Label(-text => 'Tag:')
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->NumEntry(-textvariable => \$syslist[$n]->{tag},
+                                -width => 2)
+                     ->pack(-side => 'left');
+  } elsif ($name eq 'SMR') {
+    $wd{"content.$n"}->Label(-text => 'Arcs:')
+                     ->pack(-side => 'left');
+    &arclist($wd{"content.$n"},$n,3)->pack(-side => 'left');
+    $wd{"content.$n"}->Label(-text => 'Extended:')
+                     ->pack(-side => 'left');
+    $syslist[$n]->{extended}=0;
+    $wd{"content.$n"}->Checkbutton(-variable => \$syslist[$n]->{extended})
+                     ->pack(-side => 'left');
+  } elsif ($name eq 'Submunition') {
+    $wd{"content.$n"}->Label(-text => 'Arcs:')
+                     ->pack(-side => 'left');
+    &arclist($wd{"content.$n"},$n,1)->pack(-side => 'left');
+  } elsif ($name eq 'Needle Beam') {
+    $wd{"content.$n"}->Label(-text => 'Arcs:')
+                     ->pack(-side => 'left');
+    &arclist($wd{"content.$n"},$n,1)->pack(-side => 'left');
+  } elsif ($name eq 'Pulse Torpedo') {
+    $wd{"content.$n"}->Label(-text => 'Arcs:')
+                     ->pack(-side => 'left');
+    &arclist($wd{"content.$n"},$n,1,3)->pack(-side => 'left');
+  } elsif ($name eq 'K-Gun') {
+    $syslist[$n]->{class}=1;
+    $wd{"content.$n"}->Label(-text => 'Class:')
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->NumEntry(-textvariable => \$syslist[$n]->{class},
+                                -width => 2)
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->Label(-text => 'Arcs:')
+                     ->pack(-side => 'left');
+    &arclist($wd{"content.$n"},$n)->pack(-side => 'left');
+  } elsif ($name eq 'MKP') {
+    $wd{"content.$n"}->Label(-text => 'Arcs:')
+                     ->pack(-side => 'left');
+    &arclist($wd{"content.$n"},$n,1)->pack(-side => 'left');
+  } elsif ($name eq 'Stinger Node') {
+    $wd{"content.$n"}->Label(-text => 'Arcs:')
+                     ->pack(-side => 'left');
+    &arclist($wd{"content.$n"},$n,3)->pack(-side => 'left');
+  } elsif ($name eq 'Pod Launcher Node') {
+    $wd{"content.$n"}->Label(-text => 'Arcs:')
+                     ->pack(-side => 'left');
+    &arclist($wd{"content.$n"},$n,1)->pack(-side => 'left');
+  } elsif ($name eq 'Pulser') {
+    $wd{"content.$n"}->Label(-text => 'Arcs:')
+                     ->pack(-side => 'left');
+    &arclist($wd{"content.$n"},$n)->pack(-side => 'left');
+  } elsif ($name eq 'Plasma Bolt') {
+    $syslist[$n]->{class}=1;
+    $wd{"content.$n"}->Label(-text => 'Class:')
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->NumEntry(-textvariable => \$syslist[$n]->{class},
+                                -width => 2)
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->Label(-text => 'Arcs:')
+                     ->pack(-side => 'left');
+    &arclist($wd{"content.$n"},$n,3)->pack(-side => 'left');
+  } elsif ($name eq 'Hold' || $name eq 'Passenger space' ||
+           $name eq 'Science space' || $name eq 'Troops') {
+    foreach my $v ($wd{"content.$n"}->children) {
+      $v->destroy;
+    }
+    $syslist[$n]->{size}=0;
+    $wd{"content.$n"}->Label(-text => 'Mass:')
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->NumEntry(-textvariable => \$syslist[$n]->{size},
+                                -width => 2)
+                     ->pack(-side => 'left');
+  } elsif ($name eq 'Hangar Bay') {
+    $syslist[$n]->{cap}=0;
+    $wd{"content.$n"}->Label(-text => 'Capacity:')
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->NumEntry(-textvariable => \$syslist[$n]->{cap},
+                                -width => 2)
+                     ->pack(-side => 'left');
+  } elsif ($name eq 'Sensor') {
+    $syslist[$n]->{grade}=$sensors[0];
+    $wd{"content.$n"}->Label(-text => 'Grade:')
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->NewOptionmenu(-variable => \$syslist[$n]->{grade},
+                                     -options => \@sensors)
+                     ->pack(-side => 'left');
+  } elsif ($name eq 'ECM') {
+    $syslist[$n]->{grade}=$ecm[0];
+    $wd{"content.$n"}->Label(-text => 'Grade:')
+                     ->pack(-side => 'left');
+    $wd{"content.$n"}->NewOptionmenu(-variable => \$syslist[$n]->{grade},
+                                     -options => \@ecm)
+                     ->pack(-side => 'left');
+    $syslist[$n]->{area}=0;
+    $wd{"content.$n"}->Label(-text => 'Area effect:')
+                     ->pack(-side => 'left');
+    $syslist[$n]->{extended}=0;
+    $wd{"content.$n"}->Checkbutton(-variable => \$syslist[$n]->{area})
+                     ->pack(-side => 'left');
+  }
+}
+
+sub arclist {
+  my ($parent,$n,$min,$max)=@_;
+  if (!defined($min)) {
+    $min=1;
+    $max=6;
+  } elsif (!defined($max)) {
+    $max=$min;
+  }
+  if ($min==1 && $max==1) {
+    $syslist[$n]->{arcspec}='';
+  }
+  $syslist[$n]->{arccount}=0;
+  my $f=$parent->Frame;
+  my $y=0;
+  foreach my $hemi (qw(F A)) {
+    my $x=0;
+    foreach my $hx ('P','','S') {
+      my $arc=$hemi.$hx;
+      $syslist[$n]->{arcs}->{$arc}=0;
+      if ($min==1 && $max==1) {
+        $f->Radiobutton(-value => $arc,
+                        -variable => \$syslist[$n]->{arcspec},
+                        -command => sub {
+                          map {$syslist[$n]->{arcs}->{$_}=0} @arcs;
+                          $syslist[$n]->{arcs}->{$arc}=1;
+                        })
+          ->grid(-column => $x,
+                 -row => $y);
+      } else {
+        $f->Checkbutton(-onvalue => 1,
+                        -offvalue => 0,
+                        -command => sub {
+                          &arclimit($syslist[$n],$min,$max);
+                        },
+                        -variable => \$syslist[$n]->{arcs}->{$arc})
+          ->grid(-column => $x,
+                 -row => $y);
+      }
+      $x++;
+    }
+    $y++;
+  }
+#  foreach my $arc (@arcs) {
+#    $syslist[$n]->{arcs}->{$arc}=0;
+#    $f->Label(-text => $arc)
+#      ->pack(-side => 'left');
+#    $f->Checkbutton(-onvalue => 1,
+#                    -offvalue => 0,
+#                    -variable => \$syslist[$n]->{arcs}->{$arc})
+#      ->pack(-side => 'left');
+#  }
+  return $f;
+}
+
+sub arclimit {
+  my ($system,$min,$max)=@_;
+  my @alist=(@arcs,@arcs);
+  my $au;
+  do {
+    $au=0;
+    my @amap=map {$system->{arcs}->{$_}} @arcs;
+    map {$au+=$_} @amap;
+    my $top=5;
+    my $base=0;
+    @amap=(@amap,@amap);
+    my $state=0;
+    foreach my $a (0..11) {
+      if ($state==0 && $system->{arcs}->{$alist[$a]}==0) {
+        $state=1;
+      } elsif ($state==1 && $system->{arcs}->{$alist[$a]}==1) {
+        $base=$a;
+        $state=2;
+      } elsif ($state==2 && $system->{arcs}->{$alist[$a]}==0) {
+        $top=$a-1;
+        last;
+      }
+    }
+    $top%=6;
+    $base%=6;
+    if ($au<6 && $au>0) {
+      foreach my $a (0..5) {
+        $system->{arcs}->{$alist[$a]}=0;
+      }
+      if ($top<$base) {
+        $top+=6;
+      }
+      foreach my $a ($base..$top) {
+        $system->{arcs}->{$alist[$a]}=1;
+      }
+      $top%=6;
+    }
+    $au=0;
+    @amap=map {$system->{arcs}->{$_}} @arcs;
+    map {$au+=$_} @amap;
+    if ($au>$max) {
+      foreach my $t ($top-($au-$max)+1 .. $top) {
+        $system->{arcs}->{$alist[$t]}=0;
+      }
+    }
+  } while ($au>$max);
+  $system->{arccount}=$au;
+}
+
+sub load {
+  my $sn;
+  unless (($sn) = @_) {
+    my $fsel=$top->FileSelect(-directory => '.',
+                              -filter => '*.ship');
+    $sn=$fsel->Show;
+  }
+  if (defined($sn) && $sn) {
+    $cip=1;
+    my %header=%{{ map{$_=>1} qw(Class Streamlining Classification Crew Race Navy Mass Cost Thrust Armour Hull Hullrows Power Designer FTL) }};
+    &clear;
+    my %arcs=map {$_ => 1} @arcs;
+    my $ltype='';
+    my $lvalue='';
+    open SHIP,"<$sn" || return (\[],0,0);
+    while (<SHIP>) {
+      chomp;
+      s/[\x00-\x1f]//g;
+      my ($type,$value)=($_,'');
+      if (/^(.*?):\s*(.*)/) {
+        ($type,$value)=($1,$2);
+      }
+      if (exists($header{$type})) {
+        if ($type eq 'Armour') {
+          my @a=reverse split ' ',$value;
+          push @a,(0)x(4-scalar @a);
+          map {$shipdata{Armour}->[$_]=$a[$_]} (0..3);
+        } elsif ($type eq 'FTL') {
+          $shipdata{FTL}=$value;
+          if ($value =~ /Tug (\d+)/) {
+            $shipdata{FTLx}=$1;
+            $shipdata{FTL}='Tug';
+          } else {
+            $shipdata{FTLx}=0;
+          }
+        } else {
+          $shipdata{$type}=$value;
+        }
+      } else {
+        my $qval=$value;
+        $qval =~ s![a-rt-z]\d+!!; # a bit dodgy, what about missiles?
+        if ($ltype eq $type && $lvalue eq $qval) {
+          $syslist[$#syslist]->{count}++;
+        } else {
+          $ltype=$type;
+          $lvalue=$qval;
+          my $class;
+          if ($type =~ /^Class (\d+) (.+)/) {
+            $class=$1;
+            $type=$2;
+          }
+          &appendsys;
+          my $n=$#syslist;
+          $syslist[$n]->{name}=$type;
+          &changesys($n);
+          if (defined($class)) {
+            $syslist[$n]->{class}=$class;
+          }
+          $syslist[$n]->{arccount}=0;
+          if ($value) {
+            if ($type eq 'ECM') {
+              $syslist[$n]->{area}=0;
+            }
+            foreach my $e (split ' ',$value) {
+              if(exists($arcs{$e})) {
+                $syslist[$n]->{arcs}->{$e}=1;
+                $syslist[$n]->{arccount}++;
+                $syslist[$n]->{arcspec}=$e;
+              } else {
+                if ($type eq 'SMR' && $e eq 'E') {
+                  $syslist[$n]->{extended}=1;
+                } elsif (($type eq 'SML' || $type eq 'SMM') && $e =~ /^s(\d+)$/) {
+                  $syslist[$n]->{tag}=$1;
+                } elsif ($type eq 'SMM' && $e !~ /\D/) {
+                  $syslist[$n]->{size}=$e;
+                } elsif ($type eq 'Hold' || $type eq 'Passenger space' ||
+                         $type eq 'Science space' || $type eq 'Troops') {
+                  $syslist[$n]->{size}=$e;
+                } elsif ($type eq 'Hangar Bay') {
+                  if ($e !~ /\D/) {
+                    $syslist[$n]->{cap}=$e;
+                  }
+                } elsif ($type eq 'Sensor') {
+                  if ($e =~ /^[A-Z][a-z]+$/) {
+                    $syslist[$n]->{grade}=$e;
+                  }
+                } elsif ($type eq 'ECM') {
+                  if ($e eq 'Area') {
+                    $syslist[$n]->{area}=1;
+                  } elsif ($e =~ /^[A-Z][a-z]+$/) {
+                    $syslist[$n]->{grade}=$e;
+                  }
+                } elsif ($type eq 'Minelayer') {
+                  if ($e !~ /\D/) {
+                    $syslist[$n]->{capacity}=$e;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    close SHIP;
+    foreach my $n (keys %presets) {
+      if ($shipdata{Hull} == &ftround($shipdata{Mass}*$presets{$n})) {
+        $preset=$n;
+      }
+    }
+    $cip=0;
+  }
+}
+
+sub save {
+  #my $fn=lc("$shipdata{Navy}_$shipdata{Classification}_$shipdata{Class}");
+  my $fn=lc($shipdata{Class});
+  $fn =~ s!\W!!g;
+  $fn.='.ship';
+  open FILE,">$fn";
+  my %tag=(p => 1,
+           f => 1,
+           h => 1,
+           m => 1);
+  foreach my $item (qw(Class Classification Crew Designer Race Navy Mass Streamlining Cost Power Thrust Hull Hullrows Armour)) {
+    my $use=1;
+    if ($item eq 'Power' && $shipdata{Race} ne "Sa'Vasku") {
+      $use=0;
+    }
+    my $value;
+    if ($use) {
+      if ($item eq 'Armour') {
+        my @k=@{$shipdata{$item}};
+        while ((scalar @k) && ($k[$#k] == 0)) {
+          pop @k;
+        }
+        if (@k) {
+          $value=join(' ',reverse @k);
+        } else {
+          $use=0;
+        }
+      } else {
+        $value=$shipdata{$item};
+      }
+    }
+    if ($use) {
+      print FILE "$item: $value\n";
+    }
+  }
+  foreach my $system (@syslist) {
+    my $str=$system->{name};
+    if ($str ne 'None') {
+      if(exists($system->{class})) {
+        $str='Class '.$system->{class}." $str";
+      }
+      my @params;
+      if(exists($system->{arcs})) {
+        foreach my $a (@arcs) {
+          if ($system->{arcs}->{$a}==1) {
+            push @params,$a;
+          }
+        }
+      }
+      if ($system->{name} eq 'SMM' ||
+          $system->{name} eq 'Hold' || $system->{name} eq 'Passenger space' ||
+          $system->{name} eq 'Science space' || $system->{name} eq 'Troops') {
+        push @params,$system->{size};
+      }
+      if ($system->{name} eq 'Minelayer') {
+        push @params,$system->{capacity};
+      }
+      if ($system->{name} eq 'Hangar Bay') {
+        push @params,$system->{cap};
+      }
+      if ($system->{name} eq 'Sensor') {
+        push @params,$system->{grade};
+      }
+      if ($system->{name} eq 'ECM') {
+        push @params,$system->{grade};
+        if ($system->{area}==1) {
+          push @params,'Area';
+        }
+      }
+      if ($system->{name} eq 'SMM' || $system->{name} eq 'SML') {
+        push @params,'s'.$system->{tag};
+      } elsif ($system->{name} eq 'SMR' && $system->{extended}==1) {
+        push @params,'E';
+      }
+      foreach (1..$system->{count}) {
+        my @p=@params;
+        if ($system->{name} eq 'Fighter Bay') {
+          push @p,'f'.$tag{f}++;
+        } elsif ($system->{name} eq 'Hangar Bay') {
+          push @p,'h'.$tag{h}++;
+        } elsif ($system->{name} eq 'Pulser') {
+          push @p,'p'.$tag{p}++;
+        } elsif ($system->{name} eq 'Missile') {
+          push @p,'m'.$tag{m}++;
+        } elsif ($system->{name} eq 'SMR') {
+          push @p,'r'.$tag{m}++;
+        }
+        print FILE "$str";
+        if (@p) {
+          print FILE ": ".join(' ',@p);
+        }
+        print FILE "\n";
+      }
+    }
+  }
+  if ($shipdata{FTL} eq 'Tug') {
+    print FILE "FTL: $shipdata{FTL} $shipdata{FTLx}\n";
+  } else {
+    print FILE "FTL: $shipdata{FTL}\n";
+  }
+  close FILE;
+}
+
+sub clear {
+  $cip=1;
+  foreach my $n (0..$#syslist) {
+    $wd{"chooser.$n"}->destroy;
+    $wd{"content.$n"}->destroy;
+  }
+  @syslist=();
+  foreach my $n (qw(Class Classification)) {
+    $shipdata{$n}='';
+  }
+  foreach my $n (qw(Thrust Mass Cost Hull Power)) {
+    $shipdata{$n}=0;
+  }
+  map{$shipdata{Armour}->[$_]=0} (0..3);
+  $shipdata{Hullrows}=4;
+  $shipdata{Designer}='Nobody';
+  $shipdata{Streamlining}='None';
+  $shipdata{Crew}='Military';
+  $shipdata{Race}='Human';
+  $shipdata{Navy}='n/a';
+  $shipdata{FTL}='Normal';
+  $preset='Free';
+  $cip=0;
+}
+
+sub worksheet {
+  while ($cip==1) {
+    sleep 1;
+  }
+  &check;
+  $cip=1;
+  my $t=$top->Toplevel;
+  my $text=$t->Text->pack;
+  $text->insert('end',"Ship design worksheet for $shipdata{Class} ($shipdata{Classification})\n");
+  $text->insert('end',"by $shipdata{Designer}\n\n");
+  my %subtotal=(mass => 0, points => 0);
+  my %total=%subtotal;
+  my $len=0;
+  foreach my $item (0..$#worksheet) {
+    my ($name,$mass,$points)=@{$worksheet[$item]};
+    if (length($name)>$len) {
+      $len=length($name);
+    }
+    if ($name eq 'Sub-total') {
+      $worksheet[$item]->[1]=$subtotal{mass};
+      $worksheet[$item]->[2]=$subtotal{points};
+      %subtotal=(mass => 0, points => 0);
+    } elsif ($name eq 'Total') {
+      $worksheet[$item]->[1]=$total{mass};
+      $worksheet[$item]->[2]=$total{points};
+      %total=(mass => 0, points => 0);
+    } else {
+      if ($mass !~ /\D/) {
+        $subtotal{mass}+=$mass;
+        $total{mass}+=$mass;
+      }
+      $subtotal{points}+=$points;
+      $total{points}+=$points;
+    }
+  }
+  unshift @worksheet,[qw(Item Mass Points)];
+  foreach my $item (0..$#worksheet) {
+    $text->insert('end',sprintf ("%-${len}s %6s %6s\n",@{$worksheet[$item]}));
+  }
+  $t->Button(-text => 'Done',
+             -command => sub{$t->destroy})
+    ->pack;
+  $cip=0;
+}

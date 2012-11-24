@@ -1,0 +1,163 @@
+#! /usr/bin/perl -w
+
+use strict;
+
+my %systemmap=(
+  Mass => ['*','Mass'],
+  Hull => ['*','Hull'],
+  Armour => ['*','Armor'],
+  FTL => ['*','FTLDrive'],
+  Thrust => ['*','MainDrive'],
+  Designer => ['*','Designer'],
+  Classification => ['*','ShipClass'],
+  Class => ['*','ClassName'],
+  Navy => ['*','Race'],
+  Cost => ['*','PointValue'],
+  ADFC => ['Electronics','AreaDefenseFireControl'],
+  FCS => ['Electronics','FireControl'],
+  Battery => ['Weapons','BeamBattery'],
+  'K-Gun' => ['Weapons','KineticGun'],
+  'Fighter Bay' => ['Weapons','FighterBay'],
+  'Hangar Bay' => ['Weapons','HangerBay'],
+  'Needle Beam' => ['Weapons','NeedleBeam'],
+  PDS => ['Weapons','PointDefense'],
+  'Pulse Torpedo' => ['Weapons','PulseTorpedo'],
+  SML => ['Weapons','SalvoMissileLauncher'],
+  SMM => ['Weapons','SalvoMissileMagazine'],
+  SMR => ['Weapons','SalvoMissileRack'],
+  Submunition => ['Weapons','SubmunitionPack'],
+  Scattergun => ['Weapons','Scattergun'],
+  MKP => ['Weapons','MultipleKineticPenetratorPack'],
+  'Screen Generator' => ['Defenses','Screen']
+);
+
+my %hulls=(Fragile => 0.1,
+           Weak => 0.2,
+           Average => 0.3,
+           Strong => 0.4,
+           Super => 0.5);
+
+foreach my $file (@ARGV) {
+  open F,"<$file";
+  my %out;
+  my $savedmass=0;
+  my %racenavy;
+  while (<F>) {
+    chomp;
+    my ($type,$value)=($_,'');
+    if (/^(.*?):\s*(.*)/) {   
+      ($type,$value)=($1,$2);
+    }
+    if ($type eq 'Mass') {
+      $savedmass=$value;
+    }
+    my %value;
+    my $internal='';
+    if ($type =~ /^Class (\d*) (.*)$/) {
+      $value{rating} = $1;
+      $type=$2;
+      $value{arcs}='('.join('/',split (' ',$value)).')';
+    } elsif ($type =~ /^(Needle Beam|Pulse Torpedo|SML|SMR|Submunition|MKP)$/) {
+      $value{arcs}='('.join('/',grep /^[A-Z]*$/,split (' ',$value)).')';
+    } elsif ($type eq 'SMM') {
+      $value{'capacity'}=join('/',grep /^\d*$/,split (' ',$value))
+    } elsif ($type eq 'Thrust') {
+      $value{'initialThrust'}=$value;
+    } elsif ($type eq 'Armour') {
+      $value{'totalArmor'}=$value;
+    } elsif ($type eq 'Hull') {
+      my $r='';
+      if ($savedmass) {
+        foreach my $hstr (keys %hulls) {
+          if (&ftround($hulls{$hstr}*$savedmass) == $value) {
+            $r=$hstr;
+            last;
+          }
+        }
+      }
+      if ($r) {
+        $value{value}=$savedmass;
+        $value{type}=$r;
+      } else {
+        if ($savedmass) {
+          $value{value}=$savedmass;
+        }
+        $value{type}='Custom';
+        $value{totalHullBoxes}=$value;
+      }
+    } elsif ($type eq 'Fighter Bay') {
+      $value{id}=$value;
+    } elsif ($type eq 'FTL') {
+      if ($value eq 'None') {
+        $type='';
+      }
+    } elsif ($type =~ /^(Race|Navy)$/) {
+      $racenavy{$type}=$value;
+      if (scalar keys %racenavy > 1) {
+        $type='Navy';
+        if (exists($racenavy{Navy}) && $racenavy{Navy} ne 'n/a') {
+          $internal=$racenavy{Navy};
+        } else {
+          $internal=$racenavy{Race};
+        }
+      } else {
+        $type='';
+      }
+    } elsif ($type eq 'Hullrows') {
+      $type=''; # ignore this until FTJava supports it
+    } elsif ($type eq 'Crew') {
+      $type=''; # ignore this until FTJava supports it
+    } elsif ($type eq 'Streamlining') {
+      $type=''; # ignore this until FTJava supports it
+    } else {
+      if ($value) {
+        $internal=$value;
+      }
+    }
+    if (exists $systemmap{$type}) {
+      my ($section,$name)=@{$systemmap{$type}};
+      my $tag="$name".join('',map {" $_=\"$value{$_}\""} keys %value);
+      if ($internal ne '') {
+        push @{$out{$section}},"<$tag>$internal</$name>";
+      } else {
+        push @{$out{$section}},"<$tag/>";
+      }
+    } elsif ($type) {
+      print STDERR "Warning: unknown field $type\n";
+    }
+  }
+  close F;
+  my $ofile=$file;
+  $ofile =~ s/\.ship//;
+  $ofile.='.xml';
+  open F,">$ofile";
+  print F <<EOF;
+<?xml version="1.0" standalone="no" ?>
+<!DOCTYPE Ship SYSTEM "Ship.dtd">
+<Ship>
+EOF
+  foreach my $s (sort keys %out) {
+    my $indent=4;
+    if ($s ne '*') {
+      print F ' ' x $indent,"<$s>\n";
+      $indent=8;
+    }
+    foreach my $n (@{$out{$s}}) {
+      print F ' ' x $indent,"$n\n";
+    }
+    if ($s ne '*') {
+      print F ' ' x 4,"</$s>\n";
+    }
+  }
+  print F "</Ship>\n";
+  close F;
+}
+
+sub ftround {
+  my ($t)=@_;
+  $t=int($t+.5);
+  if ($t==0) {
+    $t=1;
+  }
+  return $t;
+}
