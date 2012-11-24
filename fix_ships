@@ -1,0 +1,35 @@
+#! /usr/bin/perl -w
+
+use strict;
+use File::Find;
+use File::Copy;
+
+find(\&fix_cost, ".");
+
+my $outfile = "tempship.ship";
+
+sub fix_cost
+{
+    my $filename = $_;
+
+    open(OUTFILE,">$outfile");
+    open(INFILE,$filename);
+
+    while(my $line = <INFILE>)
+    {
+        $line =~ s/^NPV/Cost/;
+        if(!($line =~ /^CPV/))
+        {
+            print OUTFILE $line;
+        }
+    }
+
+    close(OUTFILE);
+    close(INFILE);
+
+    move($outfile,$filename);
+}
+
+unlink($outfile);
+
+
