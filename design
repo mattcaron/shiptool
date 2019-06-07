@@ -34,7 +34,6 @@ my @worksheet;
 my $preset='Free';
 my @presets=qw(Free Fragile Weak Average Strong Super);
 my %presets=map {$presets[$_] => $_/10} (1..5);
-my $pointview=0;
 my @sensors=qw(Enhanced Superior);
 my @ecm=qw(Basic Enhanced Superior);
 my @hullrowval=(3,4,5,6);
@@ -332,14 +331,23 @@ $wd{massleft}=$std->Label(-text => '0')
            -row => $row,
            -sticky => 'w');
 $row++;
-$std->Label(-text => 'Point cost')
+$std->Label(-text => 'NPV')
     ->grid(-column => 0,
            -row => $row,
            -sticky => 'w');
-$wd{cost}=$std->Label(-textvariable => \$pointview)
-    ->grid(-column => 1,
+$wd{npv}=$std->Label(-textvariable => \$shipdata{NPV})
+             ->grid(-column => 1,
+                    -row => $row,
+                    -sticky => 'w');
+$row++;
+$std->Label(-text => 'CPV')
+    ->grid(-column => 0,
            -row => $row,
            -sticky => 'w');
+$wd{cpv}=$std->Label(-textvariable => \$shipdata{CPV})
+             ->grid(-column => 1,
+                    -row => $row,
+                    -sticky => 'w');
 
 my $sys=$top->Scrolled('Pane',
                        -scrollbars => 'e',
@@ -362,7 +370,7 @@ $wd{race}->configure(-command => sub {
                          $wd{power}->configure(-state => 'disabled');
                          $shipdata{Power}=0;
                        }
-                       if ($shipdata{Race} eq 'Phalon' && $shipdata{Race} eq 'Mixed') {
+                       if ($shipdata{Race} eq 'Phalon' || $shipdata{Race} eq 'Mixed') {
                          $al='Shell (inner first)';
                          foreach my $layer(1..3) {
                            $wd{"armour.$layer"}->configure(-state => 'normal');
@@ -604,7 +612,8 @@ sub check {
     $shipdata{Hull}=&max(&ftround($shipdata{Mass}/10),$shipdata{Hull});
   }
   my $mass=$shipdata{Mass};
-  my $points=$shipdata{Mass};
+  my $points=0;
+  my $cpvdelta=0;
   my $mfp=$shipdata{Mass};
   push @worksheet,['Basic Hull','('.$shipdata{Mass}.')',$shipdata{Mass}];
   $mass-=$shipdata{Hull};
@@ -685,6 +694,7 @@ sub check {
   my $sc=0;
   push @worksheet,['Sub-total',0,0];
   foreach my $n (0..$#syslist) {
+    my $madj=0;
     my $sys=$syslist[$n];
     my $sn=$sys->{name};
     my $illegal=0;
@@ -766,9 +776,10 @@ sub check {
       }
       $sn='None';
     } elsif ($sys->{name} eq 'Fighter Bay') {
-      $mfp-=9;
       $mm=9;
       $pp=27;
+      $cpvdelta=-18;
+      $madj=1;
     } elsif ($sys->{name} eq 'Missile') {
       $mm=2;
       $pp=6;
@@ -850,10 +861,12 @@ sub check {
       $mfp-=$sys->{size};
       $pp=0;
       $sn.=" ($sys->{size} mass)";
+      $madj=1;
     } elsif ($sys->{name} eq 'Hangar Bay') {
       $mm=&ftround($sys->{cap}*1.5);
       $pp=$mm*3;
       $sn.=" ($sys->{cap} capacity)";
+      $madj=1;
     } elsif ($sys->{name} eq 'Sensor') {
       if ($sys->{grade} eq 'Enhanced') {
         $mm=1;
@@ -885,6 +898,7 @@ sub check {
           $sn.=' x '.$sys->{count};
         }
       }
+      $mfp-=$madj*$mm;
       push @worksheet,[$sn,$mm,$pp];
     }
     $mass-=$mm;
@@ -914,9 +928,8 @@ sub check {
   push @worksheet,['Sub-total',0,0];
   push @worksheet,['Total',0,0];
   $wd{massleft}->configure(-text => $mass);
-  my $opoints=$points-$shipdata{Mass}+&ftround($mfp*$mfp/100);
-  $shipdata{Cost}=$points;
-  $pointview="$points / $opoints";
+  $shipdata{NPV}=$shipdata{Mass}+$points;
+  $shipdata{CPV}=&ftround($mfp*$mfp/100)+$points+$cpvdelta;
   $cip=0;
 }
 
@@ -974,7 +987,7 @@ sub changesys {
   my $name=$syslist[$n]->{name};
   map {delete $syslist[$n]->{$_}} grep !/^name$/,keys %{$syslist[$n]};
   if ($name ne 'None') {
-    $syslist[$n]->{count}=1;
+  $syslist[$n]->{count}=1;
     $wd{"content.$n"}->Label(-text => 'Count:')
                      ->pack(-side => 'left');
     $wd{"content.$n"}->NumEntry(-textvariable => \$syslist[$n]->{count},
@@ -999,10 +1012,10 @@ sub changesys {
                                 -width => 2)
                      ->pack(-side => 'left');
   } elsif ($name eq 'SML') {
+    $syslist[$n]->{tag}=1;
     $wd{"content.$n"}->Label(-text => 'Arcs:')
                      ->pack(-side => 'left');
     &arclist($wd{"content.$n"},$n,3)->pack(-side => 'left');
-    $syslist[$n]->{tag}=1;
     $wd{"content.$n"}->Label(-text => 'Tag:')
                      ->pack(-side => 'left');
     $wd{"content.$n"}->NumEntry(-textvariable => \$syslist[$n]->{tag},
@@ -1022,12 +1035,12 @@ sub changesys {
                                 -width => 2)
                      ->pack(-side => 'left');
   } elsif ($name eq 'SMR') {
+    $syslist[$n]->{extended}=0;
     $wd{"content.$n"}->Label(-text => 'Arcs:')
                      ->pack(-side => 'left');
     &arclist($wd{"content.$n"},$n,3)->pack(-side => 'left');
     $wd{"content.$n"}->Label(-text => 'Extended:')
                      ->pack(-side => 'left');
-    $syslist[$n]->{extended}=0;
     $wd{"content.$n"}->Checkbutton(-variable => \$syslist[$n]->{extended})
                      ->pack(-side => 'left');
   } elsif ($name eq 'Submunition') {
@@ -1231,7 +1244,7 @@ sub load {
   }
   if (defined($sn) && $sn) {
     $cip=1;
-    my %header=%{{ map{$_=>1} qw(Class Streamlining Classification Crew Race Navy Mass Cost Thrust Armour Hull Hullrows Power Designer FTL) }};
+    my %header=%{{ map{$_=>1} qw(Class Streamlining Classification Crew Race Navy Mass NPV CPV Cost Thrust Armour Hull Hullrows Power Designer FTL) }};
     &clear;
     my %arcs=map {$_ => 1} @arcs;
     my $ltype='';
@@ -1345,7 +1358,7 @@ sub save {
            f => 1,
            h => 1,
            m => 1);
-  foreach my $item (qw(Class Classification Crew Designer Race Navy Mass Streamlining Cost Power Thrust Hull Hullrows Armour)) {
+  foreach my $item (qw(Class Classification Crew Designer Race Navy Mass Streamlining NPV CPV Power Thrust Hull Hullrows Armour)) {
     my $use=1;
     if ($item eq 'Power' && $shipdata{Race} ne "Sa'Vasku") {
       $use=0;
@@ -1448,7 +1461,7 @@ sub clear {
   foreach my $n (qw(Class Classification)) {
     $shipdata{$n}='';
   }
-  foreach my $n (qw(Thrust Mass Cost Hull Power)) {
+  foreach my $n (qw(Thrust Mass NPV CPV Hull Power)) {
     $shipdata{$n}=0;
   }
   map{$shipdata{Armour}->[$_]=0} (0..3);
