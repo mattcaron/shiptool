@@ -8,6 +8,7 @@
 
 use strict;
 use Tk;
+use lib ".";
 # use Tk::NewOptionmenu;
 use NewOptionmenu;
 use Tk::Pane; # Tk-GBARR
